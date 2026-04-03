@@ -26,8 +26,8 @@
             width: 100%;
             background: linear-gradient(180deg, #2c3e50 0%, #243342 100%);
             color: #fff;
-            padding: 14px 16px;
-            padding-top: calc(14px + env(safe-area-inset-top, 0px));
+            padding: 8px 12px 10px 12px;
+            padding-top: calc(8px + env(safe-area-inset-top, 0px));
             text-align: center;
             font-size: 16px;
             font-weight: bold;
@@ -35,10 +35,43 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
             flex-shrink: 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
         }
 
         .app-top-bar .app-title {
             display: block;
+        }
+
+        .app-topbar-brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .app-topbar-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 6px;
+        }
+
+        .app-topbar-header-row .ref-number {
+            font-size: 12px;
+            min-width: 140px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.95);
+            text-align: center;
+        }
+
+        .app-topbar-header-row .date-time {
+            font-size: 11px;
+            min-width: 160px;
+            color: rgba(255, 255, 255, 0.75);
+            text-align: right;
         }
 
         .app-top-bar .app-subtitle {
@@ -1000,19 +1033,11 @@
                 margin-left: 180px;
             }
 
-            .form-header {
-                padding: 10px 15px;
-                gap: 10px;
-            }
-
-            .ref-number {
-                font-size: 12px;
+            .app-topbar-header-row .ref-number {
                 min-width: 120px;
             }
-
-            .date-time {
-                font-size: 11px;
-                min-width: 150px;
+            .app-topbar-header-row .date-time {
+                min-width: 140px;
             }
 
             .content-area {
@@ -1883,15 +1908,17 @@
         <!-- Main Content -->
         <div class="main-content full-width" id="mainContent">
             <div class="app-top-bar" role="banner">
-                <span class="app-title">Entrance Pass</span>
-                <span class="app-poweredby">Powered by ASystems</span>
+                <div class="app-topbar-brand">
+                    <span class="app-title">Entrance Pass</span>
+                    <span class="app-poweredby">Powered by ASystems</span>
+                </div>
+                <div class="app-topbar-header-row">
+                    <button class="toggle-btn" id="sidebarToggle">☰</button>
+                    <div class="ref-number" id="refNumber">REF-D1-260403-0001</div>
+                    <div class="date-time" id="dateTime"></div>
+                </div>
             </div>
-            <!-- Top Header -->
-            <div class="form-header">
-                <button class="toggle-btn" id="sidebarToggle">☰</button>
-                <div class="ref-number" id="refNumber">REF-D1-260403-0001</div>
-                <div class="date-time" id="dateTime"></div>
-            </div>
+            <!-- Top Header moved into app-top-bar -->
             
             <div class="content-area">
                 <div class="form-card">
