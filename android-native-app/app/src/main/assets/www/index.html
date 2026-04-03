@@ -3330,10 +3330,12 @@
                 }
             }
 
-            // 1) If we already have cached expiry, use it (offline friendly)
             const cachedOkUntil = getCachedOkUntilIso();
-            if (cachedOkUntil) {
-                return isOkUntilIso(cachedOkUntil);
+            let isOnline = true;
+            try {
+                isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+            } catch (e) {
+                isOnline = true;
             }
 
             function getTrialStartIsoForDevice() {
@@ -3358,79 +3360,85 @@
             }
 
             // 2) Try Firebase if available
-            let firebaseReady = false;
-            try {
-                firebaseReady = !!initializeFirebase() && !!db;
-            } catch (e) {
-                firebaseReady = false;
-            }
-
-            if (firebaseReady) {
+            if (isOnline) {
+                let firebaseReady = false;
                 try {
-                    const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
-                    const license = await getFirebaseValue(licenseRef);
+                    firebaseReady = !!initializeFirebase() && !!db;
+                } catch (e) {
+                    firebaseReady = false;
+                }
 
-                    // No record => local trial (and optionally write back to Firebase when online)
-                    if (!license) {
-                        const trialStartIso = getTrialStartIsoForDevice();
-                        if (!trialStartIso) return false;
+                if (firebaseReady) {
+                    try {
+                        const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
+                        const license = await getFirebaseValue(licenseRef);
 
-                        const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
-                        const ok = isOkUntilIso(trialExpiresAtIso);
+                        // No record => local trial (and optionally write back to Firebase when online)
+                        if (!license) {
+                            const trialStartIso = getTrialStartIsoForDevice();
+                            if (!trialStartIso) return false;
 
+                            const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+                            const ok = isOkUntilIso(trialExpiresAtIso);
+
+                            try {
+                                localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, trialExpiresAtIso);
+                                localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
+                                    deviceNumber: deviceNum,
+                                    plan: 'trial',
+                                    grantedAt: trialStartIso,
+                                    expiresAt: trialExpiresAtIso
+                                }));
+                            } catch (e) {}
+
+                            // Online convenience: write trial record if possible
+                            try {
+                                const trialRecord = {
+                                    plan: 'trial',
+                                    grantedAt: trialStartIso,
+                                    expiresAt: trialExpiresAtIso
+                                };
+                                await licenseRef.set(trialRecord);
+                            } catch (e) {}
+
+                            return ok;
+                        }
+
+                        // Compute expiry
+                        let expiresAtIso = null;
+                        if (license.expiresAt) {
+                            expiresAtIso = license.expiresAt;
+                        } else if (license.grantedAt && license.duration) {
+                            expiresAtIso = addDurationToDate(license.grantedAt, license.duration).toISOString();
+                        } else if (license.grantedAt && typeof license.durationMs === 'number') {
+                            expiresAtIso = new Date(new Date(license.grantedAt).getTime() + license.durationMs).toISOString();
+                        }
+
+                        if (!expiresAtIso) return false;
+
+                        const ok = isOkUntilIso(expiresAtIso);
                         try {
-                            localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, trialExpiresAtIso);
+                            localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, expiresAtIso);
                             localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
                                 deviceNumber: deviceNum,
-                                plan: 'trial',
-                                grantedAt: trialStartIso,
-                                expiresAt: trialExpiresAtIso
+                                plan: license.plan || 'pro',
+                                grantedAt: license.grantedAt || null,
+                                expiresAt: expiresAtIso
                             }));
                         } catch (e) {}
 
-                        // Online convenience: write trial record if possible
-                        try {
-                            const trialRecord = {
-                                plan: 'trial',
-                                grantedAt: trialStartIso,
-                                expiresAt: trialExpiresAtIso
-                            };
-                            await licenseRef.set(trialRecord);
-                        } catch (e) {}
-
                         return ok;
+                    } catch (e) {
+                        console.warn('License fetch failed (will fall back to cache/trial if available):', e);
                     }
-
-                    // Compute expiry
-                    let expiresAtIso = null;
-                    if (license.expiresAt) {
-                        expiresAtIso = license.expiresAt;
-                    } else if (license.grantedAt && license.duration) {
-                        expiresAtIso = addDurationToDate(license.grantedAt, license.duration).toISOString();
-                    } else if (license.grantedAt && typeof license.durationMs === 'number') {
-                        expiresAtIso = new Date(new Date(license.grantedAt).getTime() + license.durationMs).toISOString();
-                    }
-
-                    if (!expiresAtIso) return false;
-
-                    const ok = isOkUntilIso(expiresAtIso);
-                    try {
-                        localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, expiresAtIso);
-                        localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
-                            deviceNumber: deviceNum,
-                            plan: license.plan || 'pro',
-                            grantedAt: license.grantedAt || null,
-                            expiresAt: expiresAtIso
-                        }));
-                    } catch (e) {}
-
-                    return ok;
-                } catch (e) {
-                    console.warn('License fetch failed (will use local trial if available):', e);
                 }
             }
 
-            // 3) Firebase not available or failed => fall back to local trial window
+            // 3) No internet, or Firebase failed => fall back to cached expiry, then local trial window
+            if (cachedOkUntil && isOkUntilIso(cachedOkUntil)) {
+                return true;
+            }
+
             const trialStartIso = getTrialStartIsoForDevice();
             if (!trialStartIso) return false;
             const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
