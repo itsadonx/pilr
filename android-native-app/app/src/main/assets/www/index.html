@@ -1721,8 +1721,6 @@
         <div class="main-content full-width" id="mainContent">
             <div class="app-top-bar" role="banner">
                 <span class="app-title">Entrance Pass</span>
-                <img class="app-top-logo" src="logo.jpeg" alt="App logo">
-                <span class="app-subtitle">Punta Isla Lake Resort</span>
                 <span class="app-poweredby">Powered by ASystems</span>
             </div>
             <!-- Top Header -->
@@ -2404,7 +2402,18 @@
                         openHistoryModal();
                         break;
                     case 'settings':
-                        openSettingsPasswordModal();
+                        // If current session is master key, open Settings directly (no extra password)
+                        try {
+                            const currentUser = getCurrentUser();
+                            if (currentUser && currentUser.isMasterKey) {
+                                openSettingsModal();
+                            } else {
+                                openSettingsPasswordModal();
+                            }
+                        } catch (e) {
+                            console.error('Error checking current user for settings access:', e);
+                            openSettingsPasswordModal();
+                        }
                         break;
                     case 'summary':
                         openSummaryModal();
