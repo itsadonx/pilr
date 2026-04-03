@@ -3720,6 +3720,17 @@
 
             // Show receipt modal
             receiptModal.classList.add('active');
+
+            // Android app: open system print (NativePrint → Capgo → iframe) right after Generate Pass — real print, no duplicate save
+            try {
+                if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.getPlatform && Capacitor.getPlatform() === 'android') {
+                    setTimeout(function() {
+                        printReceipt('cashier', { skipSave: true });
+                    }, 450);
+                }
+            } catch (e) {
+                console.warn('Auto-print after generate:', e);
+            }
         }
 
         // Close receipt modal - start new transaction with ref = history count + 1
@@ -4022,8 +4033,11 @@
             printDoc.close();
         }
 
-        // Print receipt — Capacitor: main WebView print first; then native HTML / iframe fallbacks.
-        function printReceipt(copyType) {
+        // Print receipt — Capacitor: NativePrint (Android) then Capgo then iframe. options.skipSave: no history write (e.g. auto-print after Generate Pass).
+        function printReceipt(copyType, options) {
+            options = options || {};
+            var skipSave = options.skipSave === true;
+
             var copyLabel = copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY';
             document.getElementById('receiptCopyLabel').textContent = copyLabel;
             var receiptContent = document.getElementById('receiptContainer').innerHTML;
@@ -4032,7 +4046,7 @@
             var isReprint = receiptModal && receiptModal.getAttribute('data-is-reprint') === 'true';
             var receiptSaved = false;
             function saveReceiptOnce() {
-                if (isReprint || receiptSaved) {
+                if (skipSave || isReprint || receiptSaved) {
                     return;
                 }
                 receiptSaved = true;
