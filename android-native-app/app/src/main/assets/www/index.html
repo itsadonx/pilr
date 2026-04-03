@@ -601,6 +601,48 @@
             border-color: #3498db;
         }
 
+        /* Segmented control (Type of Visit / Type of Entry) */
+        .segmented-group {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+
+        .segmented-btn {
+            flex: 1;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            padding: 12px 10px;
+            background-color: #ffffff;
+            color: #2c3e50;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s, transform 0.05s;
+            text-align: center;
+            user-select: none;
+        }
+
+        .segmented-btn:hover {
+            background-color: #f8f9fa;
+        }
+
+        .segmented-btn:active {
+            transform: scale(0.99);
+        }
+
+        .segmented-btn.active {
+            background-color: #d9ecff;
+            border-color: #3498db;
+        }
+
+        .segmented-icon {
+            display: inline-block;
+            margin-right: 6px;
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
         .address-input {
             width: 100%;
             padding: 12px;
@@ -720,7 +762,8 @@
         .receipt-container {
             padding: 20px;
             background-color: white;
-            font-family: 'Kalam', cursive, sans-serif;
+            /* Match reconciliation print font */
+            font-family: "Courier New", Courier, monospace, Arial, sans-serif;
             max-width: 100%;
         }
 
@@ -1871,10 +1914,40 @@
 
                     <!-- Activity Type -->
                     <div class="form-row">
-                        <label class="form-label">Activity Type:</label>
-                        <select class="entry-type-select" id="entryType">
-                            <option value="">Select Activity Type</option>
+                        <label class="form-label">Type of Visit:</label>
+                        <select class="entry-type-select" id="entryType" style="display:none;">
+                            <option value="Sightseeing">Sightseeing</option>
+                            <option value="Resto">Resto</option>
+                            <option value="Undecided">Undecided</option>
                         </select>
+                        <div class="segmented-group" role="radiogroup" aria-label="Type of Visit">
+                            <button type="button" class="segmented-btn active" data-visit="Sightseeing">
+                                <span class="segmented-icon">◎</span>Sightseeing
+                            </button>
+                            <button type="button" class="segmented-btn" data-visit="Resto">
+                                <span class="segmented-icon">⎔</span>Resto
+                            </button>
+                            <button type="button" class="segmented-btn" data-visit="Undecided">
+                                <span class="segmented-icon">?</span>Undecided
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Entry Type -->
+                    <div class="form-row">
+                        <label class="form-label">Type of Entry:</label>
+                        <input type="hidden" id="entryMode" value="Walk-in">
+                        <div class="segmented-group" role="radiogroup" aria-label="Type of Entry">
+                            <button type="button" class="segmented-btn active" data-entry="Walk-in">
+                                <span class="segmented-icon">W</span>Walk-in
+                            </button>
+                            <button type="button" class="segmented-btn" data-entry="Car">
+                                <span class="segmented-icon">C</span>Car
+                            </button>
+                            <button type="button" class="segmented-btn" data-entry="Motorcycle">
+                                <span class="segmented-icon">M</span>Motorcycle
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Address -->
@@ -2477,6 +2550,10 @@
                         <div class="receipt-detail-row">
                             <span class="receipt-detail-label">Activity Type:</span>
                             <span class="receipt-detail-value" id="receiptEntryType"></span>
+                        </div>
+                        <div class="receipt-detail-row">
+                            <span class="receipt-detail-label">Entry Type:</span>
+                            <span class="receipt-detail-value" id="receiptEntryMode"></span>
                         </div>
                         <div class="receipt-detail-row">
                             <span class="receipt-detail-label">Plate No:</span>
@@ -3875,21 +3952,30 @@
         // Load Activity Types into Dropdown
         function loadEntryTypesDropdown() {
             const entryTypeSelect = document.getElementById('entryType');
-            
-            // Clear existing options except the first one
-            entryTypeSelect.innerHTML = '<option value="">Select Activity Type</option>';
-            
-            entryTypeData.forEach(entry => {
-                const option = document.createElement('option');
-                option.value = entry.name;
-                option.textContent = entry.name;
-                entryTypeSelect.appendChild(option);
-            });
-            
-            // Select the first activity type by default if any exist
-            if (entryTypeData.length > 0) {
-                entryTypeSelect.value = entryTypeData[0].name;
+            if (!entryTypeSelect) return;
+
+            // Segmented control uses fixed values like the UI screenshot.
+            // Keep the select in sync so the rest of the app (receipt/history) continues working.
+            const currentVal = entryTypeSelect.value;
+            entryTypeSelect.innerHTML = '';
+            entryTypeSelect.appendChild(new Option('Sightseeing', 'Sightseeing'));
+            entryTypeSelect.appendChild(new Option('Resto', 'Resto'));
+            entryTypeSelect.appendChild(new Option('Undecided', 'Undecided'));
+
+            if (['Sightseeing', 'Resto', 'Undecided'].includes(currentVal)) {
+                entryTypeSelect.value = currentVal;
+            } else {
+                entryTypeSelect.value = 'Sightseeing';
             }
+
+            // Update segmented button active state if present
+            try {
+                const buttons = document.querySelectorAll('[data-visit]');
+                buttons.forEach(function(btn) {
+                    const v = btn.getAttribute('data-visit');
+                    btn.classList.toggle('active', v === entryTypeSelect.value);
+                });
+            } catch (e) {}
         }
 
         // Initialize Activity Types
@@ -4320,6 +4406,38 @@
         // Initialize Pricing Entries on page load
         loadPricingEntries();
 
+        // Segmented controls (Type of Visit + Type of Entry)
+        (function initSegmentedControls() {
+            const entryTypeSelect = document.getElementById('entryType');
+            const entryModeInput = document.getElementById('entryMode');
+
+            const visitButtons = document.querySelectorAll('[data-visit]');
+            visitButtons.forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const value = this.getAttribute('data-visit');
+                    if (entryTypeSelect) entryTypeSelect.value = value;
+                    visitButtons.forEach(function(b) { b.classList.remove('active'); });
+                    this.classList.add('active');
+                });
+            });
+
+            const entryButtons = document.querySelectorAll('[data-entry]');
+            entryButtons.forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const value = this.getAttribute('data-entry');
+                    if (entryModeInput) entryModeInput.value = value;
+                    entryButtons.forEach(function(b) { b.classList.remove('active'); });
+                    this.classList.add('active');
+                });
+            });
+
+            // Ensure defaults are in sync with UI
+            try {
+                if (entryTypeSelect && !entryTypeSelect.value) entryTypeSelect.value = 'Sightseeing';
+                if (entryModeInput && !entryModeInput.value) entryModeInput.value = 'Walk-in';
+            } catch (e) {}
+        })();
+
         // Address Modal functionality
         let addressData = [];
         const addressModal = document.getElementById('addressModal');
@@ -4645,6 +4763,7 @@
             // Get form data
             const refNumber = document.getElementById('refNumber').textContent;
             const entryType = document.getElementById('entryType').value || '';
+            const entryMode = document.getElementById('entryMode') ? document.getElementById('entryMode').value : '';
             const address = document.getElementById('address').value.trim() || '';
             const plateNo = 'N/A';
 
@@ -4681,6 +4800,7 @@
             document.getElementById('receiptDateTime').textContent = dateTimeStr;
             document.getElementById('receiptRefNumber').textContent = refNumber;
             document.getElementById('receiptEntryType').textContent = entryType || 'N/A';
+            document.getElementById('receiptEntryMode').textContent = entryMode || 'N/A';
             document.getElementById('receiptPlateNo').textContent = plateNo;
             document.getElementById('receiptAddress').textContent = address || '';
             const receiptUserTypeEl = document.getElementById('receiptUserType');
@@ -4754,6 +4874,10 @@
                     status: 'Active', // Default status is Active
                     createdBy: currentUser ? currentUser.name : '', // Store the user who created the transaction
                     createdByRole: currentUser ? currentUser.role : '', // Store the role of the creator
+                    entryMode: (function() {
+                        const el = document.getElementById('receiptEntryMode');
+                        return el ? el.textContent : '';
+                    })(),
                     pricingItems: []
                 };
 
@@ -4940,7 +5064,7 @@
                 '  body { margin: 0; padding: 0; }' +
                 '}' +
                 '* { margin: 0; padding: 0; box-sizing: border-box; }' +
-                'body { font-family: \'Kalam\', cursive, sans-serif; padding: 20px; background-color: white; }' +
+                'body { font-family: "Courier New", Courier, monospace, Arial, sans-serif; padding: 20px; background-color: white; }' +
                 '.receipt-header { text-align: center; margin-bottom: 15px; }' +
                 '.receipt-title { font-size: 22px; font-weight: bold; margin-bottom: 5px; letter-spacing: 1px; }' +
                 '.receipt-address { font-size: 12px; margin-bottom: 10px; line-height: 1.4; }' +
@@ -6328,6 +6452,10 @@
                     historyHTML += '<span class="history-item-detail-value">' + escapeHtml(receipt.entryType) + '</span>';
                     historyHTML += '</div>';
                     historyHTML += '<div class="history-item-detail">';
+                    historyHTML += '<span class="history-item-detail-label">Entry Type:</span>';
+                    historyHTML += '<span class="history-item-detail-value">' + escapeHtml(receipt.entryMode || '') + '</span>';
+                    historyHTML += '</div>';
+                    historyHTML += '<div class="history-item-detail">';
                     historyHTML += '<span class="history-item-detail-label">Address:</span>';
                     historyHTML += '<span class="history-item-detail-value">' + escapeHtml(receipt.address) + '</span>';
                     historyHTML += '</div>';
@@ -6422,6 +6550,7 @@
                 document.getElementById('receiptDateTime').textContent = receipt.dateTime || '';
                 document.getElementById('receiptRefNumber').textContent = receipt.refNumber || '';
                 document.getElementById('receiptEntryType').textContent = receipt.entryType || 'N/A';
+                document.getElementById('receiptEntryMode').textContent = receipt.entryMode || 'N/A';
                 document.getElementById('receiptPlateNo').textContent = receipt.plateNo || 'N/A';
                 document.getElementById('receiptAddress').textContent = receipt.address || '';
                 const receiptUserTypeEl = document.getElementById('receiptUserType');
