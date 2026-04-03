@@ -3158,7 +3158,9 @@
 
         const LICENSE_NODE_KEY = 'deviceLicenses';
         const TRIAL_START_KEY = 'entrancePassTrialStartAt';
+        const TRIAL_START_KEY_PREFIX = 'entrancePassTrialStartAt_';
         const LICENSE_CACHE_OK_UNTIL_KEY = 'entrancePassLicenseOkUntil';
+        const LICENSE_CACHE_KEY = 'entrancePassLicenseCache';
 
         // Get current logged in user
         function getCurrentUser() {
@@ -3310,80 +3312,141 @@
 
         async function checkDeviceLicense() {
             const deviceNum = getDeviceNumber();
-            try {
-                // Master key is already handled outside
-                if (!initializeFirebase()) {
+
+            function isOkUntilIso(expiresAtIso) {
+                if (!expiresAtIso) return false;
+                try {
+                    return Date.now() < new Date(expiresAtIso).getTime();
+                } catch (e) {
                     return false;
                 }
-                if (!db) return false;
-
-                const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
-                const license = await getFirebaseValue(licenseRef);
-
-                // If no record exists, start a 30-day trial for this device
-                if (!license) {
-                    let trialStartIso = null;
-                    try {
-                        trialStartIso = localStorage.getItem(TRIAL_START_KEY);
-                    } catch (e) {
-                        trialStartIso = null;
-                    }
-                    if (!trialStartIso) {
-                        trialStartIso = new Date().toISOString();
-                        try {
-                            localStorage.setItem(TRIAL_START_KEY, trialStartIso);
-                        } catch (e) {}
-                    }
-
-                    const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
-                    const trialRecord = {
-                        plan: 'trial',
-                        grantedAt: trialStartIso,
-                        expiresAt: trialExpiresAtIso
-                    };
-
-                    try {
-                        await licenseRef.set(trialRecord);
-                    } catch (e) {
-                        // Even if write fails, we can still allow locally for the trial window.
-                    }
-
-                    const ok = Date.now() < new Date(trialExpiresAtIso).getTime();
-                    try {
-                        localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, trialExpiresAtIso);
-                    } catch (e) {}
-                    return ok;
-                }
-
-                // Compute expiry
-                let expiresAtIso = null;
-                if (license.expiresAt) {
-                    expiresAtIso = license.expiresAt;
-                } else if (license.grantedAt && license.duration) {
-                    expiresAtIso = addDurationToDate(license.grantedAt, license.duration).toISOString();
-                } else if (license.grantedAt && typeof license.durationMs === 'number') {
-                    expiresAtIso = new Date(new Date(license.grantedAt).getTime() + license.durationMs).toISOString();
-                }
-
-                if (!expiresAtIso) {
-                    return false;
-                }
-
-                const ok = Date.now() < new Date(expiresAtIso).getTime();
-                try {
-                    localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, expiresAtIso);
-                } catch (e) {}
-                return ok;
-            } catch (e) {
-                console.error('License check failed:', e);
-
-                // Fallback to cached local expiry so the app can still work briefly offline.
-                try {
-                    const cached = localStorage.getItem(LICENSE_CACHE_OK_UNTIL_KEY);
-                    if (cached) return Date.now() < new Date(cached).getTime();
-                } catch (err) {}
-                return false;
             }
+
+            function getCachedOkUntilIso() {
+                try {
+                    return localStorage.getItem(LICENSE_CACHE_OK_UNTIL_KEY) || null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            // 1) If we already have cached expiry, use it (offline friendly)
+            const cachedOkUntil = getCachedOkUntilIso();
+            if (cachedOkUntil) {
+                return isOkUntilIso(cachedOkUntil);
+            }
+
+            function getTrialStartIsoForDevice() {
+                const perDeviceKey = TRIAL_START_KEY_PREFIX + String(deviceNum);
+                try {
+                    let iso = localStorage.getItem(perDeviceKey);
+                    if (!iso) {
+                        // Backward compatibility: older global trial key
+                        iso = localStorage.getItem(TRIAL_START_KEY);
+                        if (iso) {
+                            localStorage.setItem(perDeviceKey, iso);
+                        }
+                    }
+                    if (!iso) {
+                        iso = new Date().toISOString();
+                        localStorage.setItem(perDeviceKey, iso);
+                    }
+                    return iso;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            // 2) Try Firebase if available
+            let firebaseReady = false;
+            try {
+                firebaseReady = !!initializeFirebase() && !!db;
+            } catch (e) {
+                firebaseReady = false;
+            }
+
+            if (firebaseReady) {
+                try {
+                    const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
+                    const license = await getFirebaseValue(licenseRef);
+
+                    // No record => local trial (and optionally write back to Firebase when online)
+                    if (!license) {
+                        const trialStartIso = getTrialStartIsoForDevice();
+                        if (!trialStartIso) return false;
+
+                        const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+                        const ok = isOkUntilIso(trialExpiresAtIso);
+
+                        try {
+                            localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, trialExpiresAtIso);
+                            localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
+                                deviceNumber: deviceNum,
+                                plan: 'trial',
+                                grantedAt: trialStartIso,
+                                expiresAt: trialExpiresAtIso
+                            }));
+                        } catch (e) {}
+
+                        // Online convenience: write trial record if possible
+                        try {
+                            const trialRecord = {
+                                plan: 'trial',
+                                grantedAt: trialStartIso,
+                                expiresAt: trialExpiresAtIso
+                            };
+                            await licenseRef.set(trialRecord);
+                        } catch (e) {}
+
+                        return ok;
+                    }
+
+                    // Compute expiry
+                    let expiresAtIso = null;
+                    if (license.expiresAt) {
+                        expiresAtIso = license.expiresAt;
+                    } else if (license.grantedAt && license.duration) {
+                        expiresAtIso = addDurationToDate(license.grantedAt, license.duration).toISOString();
+                    } else if (license.grantedAt && typeof license.durationMs === 'number') {
+                        expiresAtIso = new Date(new Date(license.grantedAt).getTime() + license.durationMs).toISOString();
+                    }
+
+                    if (!expiresAtIso) return false;
+
+                    const ok = isOkUntilIso(expiresAtIso);
+                    try {
+                        localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, expiresAtIso);
+                        localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
+                            deviceNumber: deviceNum,
+                            plan: license.plan || 'pro',
+                            grantedAt: license.grantedAt || null,
+                            expiresAt: expiresAtIso
+                        }));
+                    } catch (e) {}
+
+                    return ok;
+                } catch (e) {
+                    console.warn('License fetch failed (will use local trial if available):', e);
+                }
+            }
+
+            // 3) Firebase not available or failed => fall back to local trial window
+            const trialStartIso = getTrialStartIsoForDevice();
+            if (!trialStartIso) return false;
+            const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+            const ok = isOkUntilIso(trialExpiresAtIso);
+
+            try {
+                localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, trialExpiresAtIso);
+                localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
+                    deviceNumber: deviceNum,
+                    plan: 'trial',
+                    grantedAt: trialStartIso,
+                    expiresAt: trialExpiresAtIso
+                }));
+            } catch (e) {}
+
+            return ok;
         }
 
         // Master key or Settings user password
