@@ -2173,8 +2173,17 @@
                     </div>
                     <p style="color: #7f8c8d; font-size: 12px; line-height: 1.4; margin: 6px 0 14px 0;">
                         - Print Dialog uses the current print flow (system print UI).<br>
-                        - Direct Print tries native direct print first, then falls back if needed.
+                        - Direct Print uses Bluetooth ESC/POS default printer on Android.
                     </p>
+                    <div class="form-group">
+                        <label for="defaultBluetoothPrinterSelect">Default Bluetooth Printer (Android Direct Print)</label>
+                        <select id="defaultBluetoothPrinterSelect">
+                            <option value="">No printer selected</option>
+                        </select>
+                    </div>
+                    <button class="add-btn" id="refreshBluetoothPrintersBtn" type="button" style="background-color: #95a5a6; max-width: 260px; margin-bottom: 10px;">
+                        Refresh Bluetooth Printers
+                    </button>
                     <button class="add-btn" id="savePrintSettingsBtn" type="button" style="background-color: #3498db; max-width: 220px;">
                         Save print settings
                     </button>
@@ -2927,6 +2936,7 @@
 
         const DEVICE_NUMBER_KEY = 'entrancePassDeviceNumber';
         const PRINT_MODE_KEY = 'entrancePassPrintMode';
+        const DEFAULT_BT_PRINTER_KEY = 'entrancePassDefaultBluetoothPrinter';
 
         function getDeviceNumber() {
             try {
@@ -3085,16 +3095,119 @@
             }
         }
 
+        function getDefaultBluetoothPrinter() {
+            try {
+                return JSON.parse(localStorage.getItem(DEFAULT_BT_PRINTER_KEY) || 'null');
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function setDefaultBluetoothPrinter(printer) {
+            try {
+                if (!printer || !printer.address) {
+                    localStorage.removeItem(DEFAULT_BT_PRINTER_KEY);
+                    return;
+                }
+                localStorage.setItem(DEFAULT_BT_PRINTER_KEY, JSON.stringify({
+                    name: printer.name || 'Bluetooth Printer',
+                    address: printer.address
+                }));
+            } catch (e) {}
+        }
+
+        function androidListBluetoothPrinters() {
+            try {
+                if (typeof AndroidPrint === 'undefined' || typeof AndroidPrint.listPairedBluetoothPrinters !== 'function') {
+                    return { ok: false, error: 'not_android_bridge' };
+                }
+                const raw = AndroidPrint.listPairedBluetoothPrinters();
+                if (!raw) return { ok: false, error: 'empty_response' };
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : { ok: false, error: 'invalid_response' };
+            } catch (e) {
+                return { ok: false, error: (e && e.message) ? e.message : 'list_failed' };
+            }
+        }
+
+        function populateBluetoothPrinterSelect(printers) {
+            const select = document.getElementById('defaultBluetoothPrinterSelect');
+            if (!select) return;
+
+            const list = Array.isArray(printers) ? printers : [];
+            const current = getDefaultBluetoothPrinter();
+            const currentAddress = current && current.address ? String(current.address) : '';
+
+            select.innerHTML = '<option value="">No printer selected</option>';
+            list.forEach(function(p) {
+                if (!p || !p.address) return;
+                const label = (p.name || 'Bluetooth Printer') + ' (' + p.address + ')';
+                const opt = document.createElement('option');
+                opt.value = p.address;
+                opt.textContent = label;
+                if (currentAddress && currentAddress === p.address) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            });
+        }
+
+        function refreshBluetoothPrintersInSettings() {
+            const result = androidListBluetoothPrinters();
+            if (!result.ok) {
+                if (result.error === 'permission_required') {
+                    alert('Bluetooth permission is required. Please allow Bluetooth permission and reopen the app.');
+                } else if (result.error === 'not_android_bridge') {
+                    // Browser mode: no native Android bridge
+                    populateBluetoothPrinterSelect([]);
+                } else {
+                    alert('Unable to load Bluetooth printers: ' + (result.error || 'unknown error'));
+                }
+                return;
+            }
+            populateBluetoothPrinterSelect(result.printers || []);
+        }
+
         function loadPrintSettingsIntoSettings() {
             const select = document.getElementById('printModeSelect');
             if (!select) return;
             select.value = getPrintMode();
+            refreshBluetoothPrintersInSettings();
         }
 
         function savePrintSettingsFromSettings() {
             const select = document.getElementById('printModeSelect');
             const mode = (select && select.value === 'direct') ? 'direct' : 'dialog';
+            const printerSelect = document.getElementById('defaultBluetoothPrinterSelect');
+            const selectedAddr = printerSelect ? String(printerSelect.value || '') : '';
+
+            if (mode === 'direct') {
+                if (!selectedAddr) {
+                    alert('Please select a default Bluetooth printer for Direct Print.');
+                    return;
+                }
+                const allPrinters = androidListBluetoothPrinters();
+                const match = (allPrinters.ok && Array.isArray(allPrinters.printers))
+                    ? allPrinters.printers.find(function(p) { return p && p.address === selectedAddr; })
+                    : null;
+                if (!match) {
+                    setDefaultBluetoothPrinter({ name: 'Bluetooth Printer', address: selectedAddr });
+                } else {
+                    setDefaultBluetoothPrinter(match);
+                }
+            } else {
+                // Keep previously selected printer in storage for convenience.
+                if (selectedAddr) {
+                    const allPrinters = androidListBluetoothPrinters();
+                    const match = (allPrinters.ok && Array.isArray(allPrinters.printers))
+                        ? allPrinters.printers.find(function(p) { return p && p.address === selectedAddr; })
+                        : null;
+                    if (match) setDefaultBluetoothPrinter(match);
+                }
+            }
+
             localStorage.setItem(PRINT_MODE_KEY, mode);
+
             alert('Print settings saved: ' + (mode === 'direct' ? 'Direct Print' : 'Print Dialog'));
         }
 
@@ -3183,6 +3296,10 @@
         const savePrintSettingsBtn = document.getElementById('savePrintSettingsBtn');
         if (savePrintSettingsBtn) {
             savePrintSettingsBtn.addEventListener('click', savePrintSettingsFromSettings);
+        }
+        const refreshBluetoothPrintersBtn = document.getElementById('refreshBluetoothPrintersBtn');
+        if (refreshBluetoothPrintersBtn) {
+            refreshBluetoothPrintersBtn.addEventListener('click', refreshBluetoothPrintersInSettings);
         }
 
         // Close modal when clicking outside
@@ -5849,6 +5966,33 @@
             printDoc.close();
         }
 
+        function buildEscPosTextFromElement(el, title) {
+            var header = (title || 'Receipt').toUpperCase() + '\n';
+            header += '--------------------------------\n';
+            if (!el) return header + '\n';
+            var txt = (el.innerText || el.textContent || '').replace(/\r/g, '');
+            txt = txt.replace(/\n{3,}/g, '\n\n');
+            return header + txt + '\n\n';
+        }
+
+        function tryEscPosDirectPrint(textContent) {
+            try {
+                if (typeof AndroidPrint === 'undefined' || typeof AndroidPrint.printEscPosText !== 'function') {
+                    return { ok: false, error: 'not_android_bridge' };
+                }
+                var printer = getDefaultBluetoothPrinter();
+                if (!printer || !printer.address) {
+                    return { ok: false, error: 'no_default_printer' };
+                }
+                var raw = AndroidPrint.printEscPosText(printer.address, textContent || '');
+                if (!raw) return { ok: false, error: 'empty_response' };
+                var parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : { ok: false, error: 'invalid_response' };
+            } catch (e) {
+                return { ok: false, error: (e && e.message) ? e.message : 'direct_print_failed' };
+            }
+        }
+
         // Print receipt — Capacitor: NativePrint (Android) then Capgo then iframe. options.skipSave: no history write (e.g. auto-print after Generate Pass).
         function printReceipt(copyType, options) {
             options = options || {};
@@ -5876,6 +6020,27 @@
             if (printMode === 'dialog') {
                 printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
                 return;
+            }
+
+            // Direct mode with Android ESC/POS default printer.
+            if (printMode === 'direct' && typeof AndroidPrint !== 'undefined' && typeof AndroidPrint.printEscPosText === 'function') {
+                var escText = buildEscPosTextFromElement(document.getElementById('receiptContainer'), 'Entrance Pass');
+                var escResult = tryEscPosDirectPrint(escText);
+                if (escResult.ok) {
+                    saveReceiptOnce();
+                    return;
+                }
+                if (escResult.error === 'no_default_printer') {
+                    alert('No default Bluetooth printer is selected. Please open Settings → Print and set one.');
+                    openSettingsModal();
+                    switchTab('print');
+                    return;
+                }
+                if (escResult.error === 'permission_required') {
+                    alert('Bluetooth permission is required for Direct Print. Please allow permission and reopen the app.');
+                    return;
+                }
+                // fall through to existing direct/native fallback path
             }
 
             // Direct mode below
@@ -7029,6 +7194,25 @@
                 if (printMode === 'dialog') {
                     printHtmlInIframeOnly(htmlContent);
                     return;
+                }
+
+                if (printMode === 'direct' && typeof AndroidPrint !== 'undefined' && typeof AndroidPrint.printEscPosText === 'function') {
+                    var escText = buildEscPosTextFromElement(document.getElementById('reconciliationContent'), 'Reconciliation Report');
+                    var escResult = tryEscPosDirectPrint(escText);
+                    if (escResult.ok) {
+                        return;
+                    }
+                    if (escResult.error === 'no_default_printer') {
+                        alert('No default Bluetooth printer is selected. Please open Settings → Print and set one.');
+                        openSettingsModal();
+                        switchTab('print');
+                        return;
+                    }
+                    if (escResult.error === 'permission_required') {
+                        alert('Bluetooth permission is required for Direct Print. Please allow permission and reopen the app.');
+                        return;
+                    }
+                    // fall through to existing direct/native path
                 }
 
                 // Direct mode
