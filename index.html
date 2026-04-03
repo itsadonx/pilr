@@ -3880,10 +3880,36 @@
             }
         }
 
-        function tryNativePrintHtml(html, jobName) {
-            if (!isCapacitorNativeApp()) {
-                return Promise.resolve(false);
+        // Strip slow external font CSS for Android WebView print (avoids blank output before fonts load).
+        function htmlForAndroidNativePrint(html) {
+            return html.replace(/<link[^>]*fonts\.googleapis\.com[^>]*>/gi, '');
+        }
+
+        var _nativePrintPlugin = undefined;
+        function getNativePrintPlugin() {
+            if (_nativePrintPlugin !== undefined) {
+                return _nativePrintPlugin;
             }
+            _nativePrintPlugin = null;
+            try {
+                if (typeof Capacitor !== 'undefined' && Capacitor.registerPlugin) {
+                    _nativePrintPlugin = Capacitor.registerPlugin('NativePrint', {
+                        web: function() {
+                            return {
+                                printHtml: function() {
+                                    return Promise.reject(new Error('NativePrint is not available in browser'));
+                                }
+                            };
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('NativePrint registration failed:', err);
+            }
+            return _nativePrintPlugin;
+        }
+
+        function tryCapgoPrintHtml(html, jobName) {
             var P = getCapacitorPrinterPlugin();
             if (!P || typeof P.printHtml !== 'function') {
                 return Promise.resolve(false);
@@ -3891,9 +3917,31 @@
             return P.printHtml({ html: html, name: jobName || 'Document' }).then(function() {
                 return true;
             }).catch(function(e) {
-                console.error('Native print failed, using iframe fallback:', e);
+                console.error('Capgo printer failed:', e);
                 return false;
             });
+        }
+
+        function tryNativePrintHtml(html, jobName) {
+            if (!isCapacitorNativeApp()) {
+                return Promise.resolve(false);
+            }
+            var name = jobName || 'Document';
+            var platform = (typeof Capacitor !== 'undefined' && Capacitor.getPlatform) ? Capacitor.getPlatform() : 'web';
+            if (platform === 'android') {
+                var np = getNativePrintPlugin();
+                var optimized = htmlForAndroidNativePrint(html);
+                if (np && typeof np.printHtml === 'function') {
+                    return np.printHtml({ html: optimized, name: name }).then(function() {
+                        return true;
+                    }).catch(function(e) {
+                        console.error('Android NativePrint failed, trying Capgo:', e);
+                        return tryCapgoPrintHtml(html, name);
+                    });
+                }
+                return tryCapgoPrintHtml(html, name);
+            }
+            return tryCapgoPrintHtml(html, name);
         }
 
         function printReceiptHtmlInIframe(htmlContent, saveReceiptOnce) {
