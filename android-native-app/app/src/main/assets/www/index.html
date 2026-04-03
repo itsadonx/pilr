@@ -739,6 +739,43 @@
             white-space: nowrap;
         }
 
+        .welcome-popup {
+            position: fixed;
+            left: 50%;
+            top: 24px;
+            transform: translateX(-50%) translateY(-14px) scale(0.98);
+            background: linear-gradient(135deg, #3498db, #2c3e50);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.28);
+            z-index: 6000;
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 220ms ease, opacity 220ms ease;
+            max-width: 90vw;
+            text-align: center;
+        }
+
+        .welcome-popup.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0) scale(1);
+        }
+
+        .welcome-popup .welcome-title {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 2px;
+            letter-spacing: 0.3px;
+        }
+
+        .welcome-popup .welcome-name {
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1.25;
+            word-break: break-word;
+        }
+
         .address-input-wrapper {
             position: relative;
             width: 100%;
@@ -1844,6 +1881,11 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
+    <div id="welcomePopup" class="welcome-popup" aria-live="polite" aria-atomic="true">
+        <div class="welcome-title">Welcome</div>
+        <div class="welcome-name" id="welcomePopupName"></div>
+    </div>
+
     <div id="splashScreen" class="splash-screen" aria-hidden="false">
         <div class="splash-card">
             <img class="splash-logo" src="logo.jpeg" alt="App logo">
@@ -3449,6 +3491,26 @@
         const gatePasswordInput = document.getElementById('gate-password');
         const gateErrorEl = document.getElementById('gateError');
         const gateLoginBtn = document.getElementById('gateLoginBtn');
+        const welcomePopupEl = document.getElementById('welcomePopup');
+        const welcomePopupNameEl = document.getElementById('welcomePopupName');
+        let welcomePopupTimer = null;
+
+        function showWelcomePopup(fullName) {
+            if (!welcomePopupEl || !welcomePopupNameEl) return;
+            const name = String(fullName || '').trim();
+            if (!name) return;
+
+            welcomePopupNameEl.textContent = name;
+            welcomePopupEl.classList.add('show');
+
+            if (welcomePopupTimer) {
+                clearTimeout(welcomePopupTimer);
+            }
+            welcomePopupTimer = setTimeout(function() {
+                welcomePopupEl.classList.remove('show');
+                welcomePopupTimer = null;
+            }, 2200);
+        }
 
         // License gate state (trial/pro managed in Firebase per device number)
         let licenseChecking = false;
@@ -3981,6 +4043,7 @@
                     role: 'admin',
                     isMasterKey: true
                 });
+                showWelcomePopup('Master Admin');
                 return { ok: true };
             }
             const user = userData.find(function(u) {
@@ -3992,6 +4055,7 @@
                     role: user.role,
                     isMasterKey: false
                 });
+                showWelcomePopup(user.name || '');
                 return { ok: true };
             }
             return { ok: false, message: 'Invalid password' };
@@ -5001,6 +5065,27 @@
             }
         }
 
+        function getAddressPaxTotalsFromHistory() {
+            const totals = {};
+            try {
+                const raw = localStorage.getItem('receiptHistory');
+                if (!raw) return totals;
+                const receipts = JSON.parse(raw);
+                if (!Array.isArray(receipts)) return totals;
+
+                receipts.forEach(function(receipt) {
+                    const addressLower = String(receipt && receipt.address ? receipt.address : '').toLowerCase().trim();
+                    if (!addressLower) return;
+
+                    const pax = Number(receipt && receipt.totalPax) || 0;
+                    totals[addressLower] = (totals[addressLower] || 0) + pax;
+                });
+            } catch (e) {
+                console.warn('getAddressPaxTotalsFromHistory:', e);
+            }
+            return totals;
+        }
+
         function getLastUsedAddressLower() {
             try {
                 const v = localStorage.getItem(ADDRESS_LAST_USED_KEY);
@@ -5101,11 +5186,20 @@
             );
 
             const visitCounts = getAddressVisitCounts();
+            const paxTotals = getAddressPaxTotalsFromHistory();
             const lastUsedLower = getLastUsedAddressLower();
-            let mostVisitedCount = 0;
-            Object.keys(visitCounts).forEach(function(k) {
-                if (typeof visitCounts[k] === 'number' && visitCounts[k] > mostVisitedCount) {
-                    mostVisitedCount = visitCounts[k];
+
+            // Determine ONE true most visited address using total pax from history.
+            let topAddressLower = '';
+            let topPax = -1;
+            Object.keys(paxTotals).forEach(function(addrLower) {
+                const pax = Number(paxTotals[addrLower]) || 0;
+                if (pax > topPax) {
+                    topPax = pax;
+                    topAddressLower = addrLower;
+                } else if (pax === topPax && pax > 0 && addrLower < topAddressLower) {
+                    // deterministic tie-breaker
+                    topAddressLower = addrLower;
                 }
             });
 
@@ -5138,15 +5232,14 @@
 
                 const aCount = visitCounts[aLower] || 0;
                 const bCount = visitCounts[bLower] || 0;
-                if (bCount !== aCount) return bCount - aCount;
+                if (bCount !== aCount) return bCount - aCount; // sort fallback unchanged
 
                 return aLower.localeCompare(bLower);
             });
 
             addressList.innerHTML = sortedAddresses.map(address => {
                 const addrLower = String(address || '').toLowerCase();
-                const count = visitCounts[addrLower] || 0;
-                const isMostVisited = mostVisitedCount > 0 && count === mostVisitedCount;
+                const isMostVisited = !!topAddressLower && (addrLower === topAddressLower) && topPax > 0;
                 const flagHTML = isMostVisited ? `<span class="address-most-visited">MOST VISITED</span>` : '';
                 return `<div class="address-item" data-address="${escapeHtml(address)}">${escapeHtml(address)}${flagHTML}</div>`;
             }).join('');
