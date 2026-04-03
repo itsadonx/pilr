@@ -63,6 +63,10 @@ public class NativePrintPlugin extends Plugin {
                     public void run() {
                         removePendingWebView();
 
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            WebView.enableSlowWholeDocumentDraw();
+                        }
+
                         final WebView webView = new WebView(activity);
                         final WebSettings ws = webView.getSettings();
                         ws.setJavaScriptEnabled(false);
@@ -117,6 +121,7 @@ public class NativePrintPlugin extends Plugin {
                                                                                             .PRINT_SERVICE);
                                                             if (pm == null) {
                                                                 call.reject("PrintManager unavailable");
+                                                                removePendingWebView();
                                                                 return;
                                                             }
                                                             String documentName = jobName + "_document";
@@ -130,6 +135,7 @@ public class NativePrintPlugin extends Plugin {
                                                                             .build());
                                                             call.resolve();
                                                         } catch (Exception e) {
+                                                            removePendingWebView();
                                                             call.reject(
                                                                     e.getMessage() != null
                                                                             ? e.getMessage()
@@ -138,7 +144,7 @@ public class NativePrintPlugin extends Plugin {
                                                         }
                                                     }
                                                 },
-                                                600);
+                                                800);
                                     }
                                 });
 

@@ -448,44 +448,6 @@
             max-width: 100%;
         }
 
-        /* Off-screen host for Android/iOS Capacitor: Printer.printWebView() uses the real Bridge WebView */
-        #cap-print-root {
-            position: absolute;
-            left: -9999px;
-            top: 0;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            margin: 0;
-            padding: 0;
-            pointer-events: none;
-        }
-
-        @media print {
-            body.cap-print-job-active .container,
-            body.cap-print-job-active .modal-overlay {
-                display: none !important;
-            }
-            body.cap-print-job-active #cap-print-root,
-            body.cap-print-job-active #cap-print-root * {
-                visibility: visible !important;
-            }
-            body.cap-print-job-active #cap-print-root {
-                display: block !important;
-                position: static !important;
-                left: auto !important;
-                top: auto !important;
-                width: 100% !important;
-                height: auto !important;
-                overflow: visible !important;
-                clip: auto !important;
-                pointer-events: auto !important;
-                padding: 12px;
-                background: #fff;
-            }
-        }
-
         @media print {
             .receipt-container {
                 padding: 0;
@@ -2171,8 +2133,6 @@
             </div>
         </div>
     </div>
-
-    <div id="cap-print-root" aria-hidden="true"></div>
 
     <script>
         // Sidebar toggle functionality
@@ -3962,23 +3922,6 @@
             });
         }
 
-        /** Uses the real Capacitor WebView — most reliable on Android (PrintManager + laid-out DOM). */
-        function tryCapacitorPrintWebView(jobName) {
-            if (!isCapacitorNativeApp()) {
-                return Promise.resolve(false);
-            }
-            var P = getCapacitorPrinterPlugin();
-            if (!P || typeof P.printWebView !== 'function') {
-                return Promise.resolve(false);
-            }
-            return P.printWebView({ name: jobName || 'Document' }).then(function() {
-                return true;
-            }).catch(function(e) {
-                console.error('printWebView failed:', e);
-                return false;
-            });
-        }
-
         function buildReceiptHtmlDocument(receiptContent) {
             return '<!DOCTYPE html>' +
                 '<html>' +
@@ -4014,14 +3957,6 @@
                 receiptContent +
                 '</body>' +
                 '</html>';
-        }
-
-        function clearCapPrintHost() {
-            var printRoot = document.getElementById('cap-print-root');
-            if (printRoot) {
-                printRoot.innerHTML = '';
-            }
-            document.body.classList.remove('cap-print-job-active');
         }
 
         function tryNativePrintHtml(html, jobName) {
@@ -4111,26 +4046,20 @@
                 return;
             }
 
-            var printRoot = document.getElementById('cap-print-root');
-            printRoot.innerHTML = '<div class="receipt-container">' + receiptContent + '</div>';
-            document.body.classList.add('cap-print-job-active');
-
-            setTimeout(function() {
-                tryCapacitorPrintWebView('Entrance Pass Receipt').then(function(ok) {
-                    clearCapPrintHost();
-                    if (ok) {
+            // Capacitor: NativePrint (Android) then Capgo printHtml, then iframe — not printWebView (often blank).
+            tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
+                if (usedNative) {
+                    saveReceiptOnce();
+                    return;
+                }
+                tryCapgoPrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedCapgo) {
+                    if (usedCapgo) {
                         saveReceiptOnce();
                         return;
                     }
-                    tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
-                        if (usedNative) {
-                            saveReceiptOnce();
-                            return;
-                        }
-                        printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
-                    });
+                    printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
                 });
-            }, 150);
+            });
         }
 
         function printHtmlInIframeOnly(htmlContent) {
@@ -5083,23 +5012,16 @@
                     return;
                 }
 
-                var reconPrintRoot = document.getElementById('cap-print-root');
-                reconPrintRoot.innerHTML = '<div class="recon-print-outer">' + printHTML + '</div>';
-                document.body.classList.add('cap-print-job-active');
-
-                setTimeout(function() {
-                    tryCapacitorPrintWebView('Reconciliation Report').then(function(ok) {
-                        clearCapPrintHost();
-                        if (ok) {
-                            return;
+                tryNativePrintHtml(htmlContent, 'Reconciliation Report').then(function(usedNative) {
+                    if (usedNative) {
+                        return;
+                    }
+                    tryCapgoPrintHtml(htmlContent, 'Reconciliation Report').then(function(usedCapgo) {
+                        if (!usedCapgo) {
+                            printHtmlInIframeOnly(htmlContent);
                         }
-                        tryNativePrintHtml(htmlContent, 'Reconciliation Report').then(function(usedNative) {
-                            if (!usedNative) {
-                                printHtmlInIframeOnly(htmlContent);
-                            }
-                        });
                     });
-                }, 150);
+                });
             } catch (e) {
                 console.error('Error printing reconciliation:', e);
                 alert('Error generating print preview. Please try again.');
