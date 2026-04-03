@@ -3313,6 +3313,86 @@
         async function checkDeviceLicense() {
             const deviceNum = getDeviceNumber();
 
+            const DEVICE_ID_KEY = 'entrancePassDeviceId';
+            const DEVICE_REGISTRY_NODE_KEY = 'deviceRegistry';
+            const DEVICE_REGISTRY_OK_CACHE_PREFIX = 'entrancePassDeviceRegistryOk_';
+            const DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX = 'entrancePassDeviceRegistryDeviceId_';
+            const LAST_DEVICE_NUMBER_CHECKED_KEY = 'entrancePassLastDeviceNumberCheckedAt';
+
+            function getOrCreateLocalDeviceId() {
+                try {
+                    const existing = localStorage.getItem(DEVICE_ID_KEY);
+                    if (existing) return existing;
+                } catch (e) {}
+
+                const newId = 'dev_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+                try {
+                    localStorage.setItem(DEVICE_ID_KEY, newId);
+                } catch (e) {}
+                return newId;
+            }
+
+            const localDeviceId = getOrCreateLocalDeviceId();
+            const registryOkCacheKey = DEVICE_REGISTRY_OK_CACHE_PREFIX + String(deviceNum);
+            const registryOkCached = (function() {
+                try {
+                    return localStorage.getItem(registryOkCacheKey);
+                } catch (e) {
+                    return null;
+                }
+            })();
+
+            // If we previously detected a device-number conflict, keep locked offline.
+            if (registryOkCached === 'false') {
+                return false;
+            }
+
+            async function ensureDeviceRegisteredOnFirebase() {
+                // Returns true if allowed, false if a different device already owns this device number.
+                const registryRef = db.ref(DEVICE_REGISTRY_NODE_KEY + '/' + String(deviceNum));
+                const record = await getFirebaseValue(registryRef);
+
+                const nowIso = new Date().toISOString();
+                if (!record) {
+                    // Create registry entry for this device number
+                    await registryRef.set({
+                        deviceId: localDeviceId,
+                        firstSeenAt: nowIso,
+                        lastSeenAt: nowIso
+                    });
+                    try {
+                        localStorage.setItem(registryOkCacheKey, 'true');
+                        localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), localDeviceId);
+                        localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
+                    } catch (e) {}
+                    return true;
+                }
+
+                const existingDeviceId = record.deviceId;
+                if (existingDeviceId && existingDeviceId !== localDeviceId) {
+                    // Conflict: same device number is used on a different device
+                    try {
+                        localStorage.setItem(registryOkCacheKey, 'false');
+                        localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), existingDeviceId);
+                        localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
+                    } catch (e) {}
+                    return false;
+                }
+
+                // Same device (or registry didn't have a deviceId yet) -> update lastSeen
+                await registryRef.update({
+                    deviceId: localDeviceId,
+                    firstSeenAt: record.firstSeenAt || nowIso,
+                    lastSeenAt: nowIso
+                });
+                try {
+                    localStorage.setItem(registryOkCacheKey, 'true');
+                    localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), localDeviceId);
+                    localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
+                } catch (e) {}
+                return true;
+            }
+
             function isOkUntilIso(expiresAtIso) {
                 if (!expiresAtIso) return false;
                 try {
@@ -3370,6 +3450,12 @@
 
                 if (firebaseReady) {
                     try {
+                        // Ensure this device number isn't being reused by another device
+                        const okRegistry = await ensureDeviceRegisteredOnFirebase();
+                        if (!okRegistry) {
+                            return false;
+                        }
+
                         const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
                         const license = await getFirebaseValue(licenseRef);
 
@@ -3416,7 +3502,7 @@
 
                         if (!expiresAtIso) return false;
 
-                        const ok = isOkUntilIso(expiresAtIso);
+                const ok = isOkUntilIso(expiresAtIso);
                         try {
                             localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, expiresAtIso);
                             localStorage.setItem(LICENSE_CACHE_KEY, JSON.stringify({
