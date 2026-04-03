@@ -29,7 +29,7 @@
             padding: 14px 16px;
             padding-top: calc(14px + env(safe-area-inset-top, 0px));
             text-align: center;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
             letter-spacing: 0.5px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -39,6 +39,33 @@
 
         .app-top-bar .app-title {
             display: block;
+        }
+
+        .app-top-bar .app-subtitle {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            margin-top: 4px;
+            letter-spacing: 0.2px;
+        }
+
+        .app-top-bar .app-poweredby {
+            display: block;
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.85);
+            margin-top: 2px;
+            letter-spacing: 0.2px;
+        }
+
+        .app-top-bar .app-top-logo {
+            display: block;
+            width: 44px;
+            height: 44px;
+            object-fit: contain;
+            margin: 6px auto 0 auto;
+            filter: brightness(1.02);
         }
 
         /* Blocks the whole app until sign-in (master key or Settings user password) */
@@ -67,6 +94,39 @@
             border-radius: 12px;
             padding: 28px 24px;
             box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+        }
+
+        .session-gate-card .gate-brand-logo {
+            display: block;
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+            margin: 0 auto 12px auto;
+        }
+
+        .session-gate-card .gate-brand-resort {
+            font-size: 16px;
+            font-weight: 700;
+            color: #2c3e50;
+            text-align: center;
+            margin: 0 0 4px 0;
+        }
+
+        .session-gate-card .gate-brand-app {
+            font-size: 22px;
+            font-weight: 800;
+            color: #3498db;
+            text-align: center;
+            margin: 0 0 14px 0;
+            letter-spacing: 0.4px;
+        }
+
+        .session-gate-card .gate-brand-footer {
+            font-size: 12px;
+            line-height: 1.4;
+            color: #7f8c8d;
+            text-align: center;
+            margin-top: 14px;
         }
 
         .session-gate-card h1 {
@@ -1607,14 +1667,25 @@
 <body>
     <div id="sessionGate" class="session-gate" role="dialog" aria-modal="true" aria-labelledby="sessionGateTitle" aria-hidden="true">
         <div class="session-gate-card">
+            <img class="gate-brand-logo" src="logo.jpeg" alt="App logo">
+            <div class="gate-brand-resort">Punta Isla Lake Resort</div>
+            <div class="gate-brand-app">Entrance Pass</div>
+
             <h1 id="sessionGateTitle">Sign in</h1>
-            <p class="session-gate-hint">This device is locked until you sign in. Use the <strong>master key</strong>, or the password for an account created in <strong>Settings → User</strong>.</p>
+            <p class="session-gate-hint">Use the <strong>master key</strong>, or the password for an account created in <strong>Settings → User</strong>.</p>
+
             <div class="form-group">
                 <label for="gate-password">Password</label>
                 <input type="password" id="gate-password" name="password" autocomplete="current-password" placeholder="Enter password">
             </div>
+
             <div id="gateError" style="display: none;"></div>
             <button type="button" id="gateLoginBtn">Sign in</button>
+
+            <div class="gate-brand-footer">
+                Developed by: Adonnis Pama<br>
+                Powered by ASystems
+            </div>
         </div>
     </div>
 
@@ -1650,6 +1721,9 @@
         <div class="main-content full-width" id="mainContent">
             <div class="app-top-bar" role="banner">
                 <span class="app-title">Entrance Pass</span>
+                <img class="app-top-logo" src="logo.jpeg" alt="App logo">
+                <span class="app-subtitle">Punta Isla Lake Resort</span>
+                <span class="app-poweredby">Powered by ASystems</span>
             </div>
             <!-- Top Header -->
             <div class="form-header">
@@ -4980,6 +5054,7 @@
                 // Build reconciliation HTML
                 let reconHTML = '<div style="padding: 15px; background-color: #f8f9fa; border-radius: 5px; margin-bottom: 15px;">';
                 reconHTML += '<h4 style="margin-top: 0; color: #2c3e50;">Transaction Reconciliation</h4>';
+                reconHTML += '<div style="font-size: 13px; color: #7f8c8d; margin-top: 8px;">Device: D' + getDeviceNumber() + '</div>';
                 reconHTML += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">';
                 reconHTML += '<div style="padding: 15px; background-color: white; border-radius: 5px; border-left: 4px solid #27ae60;">';
                 reconHTML += '<div style="font-size: 12px; color: #7f8c8d; margin-bottom: 5px;">Active Transactions</div>';
@@ -5199,6 +5274,7 @@
                 printHTML += '</div>';
                 printHTML += '<div style="font-size: 7pt; margin-bottom: 5px;">Generated: ' + dateStr + '</div>';
                 printHTML += '<div style="font-size: 7pt; margin-bottom: 5px;">Printed by: ' + escapeHtml(printedByText || '—') + '</div>';
+                printHTML += '<div style="font-size: 7pt; margin-bottom: 5px;">Device: D' + getDeviceNumber() + '</div>';
                 printHTML += '<div style="border-top: 1px dashed #000; margin: 5px 0;"></div>';
                 printHTML += '</div>';
 
