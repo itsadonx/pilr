@@ -3547,11 +3547,6 @@
                 }
             })();
 
-            // If we previously detected a device-number conflict, keep locked offline.
-            if (registryOkCached === 'false') {
-                return false;
-            }
-
             async function ensureDeviceRegisteredOnFirebase() {
                 // Returns true if allowed, false if a different device already owns this device number.
                 const registryRef = db.ref(DEVICE_REGISTRY_NODE_KEY + '/' + String(deviceNum));
