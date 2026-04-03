@@ -656,6 +656,14 @@
             background-color: transparent;
         }
 
+        .address-most-visited {
+            color: #e74c3c;
+            font-size: 11px;
+            font-weight: 800;
+            margin-left: 10px;
+            white-space: nowrap;
+        }
+
         .address-input-wrapper {
             position: relative;
             width: 100%;
@@ -3918,6 +3926,9 @@
             if (!addressData.some(addr => addr.toLowerCase() === capitalizedAddress.toLowerCase())) {
                 addressData.push(capitalizedAddress);
             }
+
+            // Track address usage for ordering & "most visited" label
+            recordAddressUsage(capitalizedAddress);
             
             // Save addresses to localStorage only when pass is generated
             saveAddressesToLocalStorage();
@@ -3971,6 +3982,41 @@
         const addressList = document.getElementById('addressList');
         const closeAddressModalBtn = document.getElementById('closeAddressModal');
         const addressCheckBtn = document.getElementById('addressCheckBtn');
+
+        const ADDRESS_VISIT_COUNTS_KEY = 'addressVisitCounts';
+        const ADDRESS_LAST_USED_KEY = 'entrancePassLastUsedAddress';
+
+        function getAddressVisitCounts() {
+            try {
+                const raw = localStorage.getItem(ADDRESS_VISIT_COUNTS_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (e) {
+                console.warn('getAddressVisitCounts:', e);
+                return {};
+            }
+        }
+
+        function getLastUsedAddressLower() {
+            try {
+                const v = localStorage.getItem(ADDRESS_LAST_USED_KEY);
+                return v ? String(v).toLowerCase().trim() : '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function recordAddressUsage(address) {
+            const lower = String(address || '').toLowerCase().trim();
+            if (!lower) return;
+
+            const counts = getAddressVisitCounts();
+            counts[lower] = (counts[lower] || 0) + 1;
+
+            localStorage.setItem(ADDRESS_VISIT_COUNTS_KEY, JSON.stringify(counts));
+            localStorage.setItem(ADDRESS_LAST_USED_KEY, lower);
+        }
 
         // Capitalize first letter of each word in address
         function capitalizeAddress(address) {
@@ -4051,6 +4097,15 @@
                 address.toLowerCase().includes(trimmedText.toLowerCase())
             );
 
+            const visitCounts = getAddressVisitCounts();
+            const lastUsedLower = getLastUsedAddressLower();
+            let mostVisitedCount = 0;
+            Object.keys(visitCounts).forEach(function(k) {
+                if (typeof visitCounts[k] === 'number' && visitCounts[k] > mostVisitedCount) {
+                    mostVisitedCount = visitCounts[k];
+                }
+            });
+
             // Show/hide check button based on whether typed address is not in the list (case-insensitive)
             const capitalizedText = capitalizeAddress(trimmedText);
             if (trimmedText !== '' && !addressData.some(addr => addr.toLowerCase() === capitalizedText.toLowerCase())) {
@@ -4069,9 +4124,29 @@
                 return;
             }
 
-            addressList.innerHTML = filteredAddresses.map(address => 
-                `<div class="address-item" data-address="${escapeHtml(address)}">${escapeHtml(address)}</div>`
-            ).join('');
+            const sortedAddresses = filteredAddresses.slice().sort(function(a, b) {
+                const aLower = String(a || '').toLowerCase();
+                const bLower = String(b || '').toLowerCase();
+
+                const aIsLastUsed = lastUsedLower && aLower === lastUsedLower;
+                const bIsLastUsed = lastUsedLower && bLower === lastUsedLower;
+                if (aIsLastUsed && !bIsLastUsed) return -1;
+                if (!aIsLastUsed && bIsLastUsed) return 1;
+
+                const aCount = visitCounts[aLower] || 0;
+                const bCount = visitCounts[bLower] || 0;
+                if (bCount !== aCount) return bCount - aCount;
+
+                return aLower.localeCompare(bLower);
+            });
+
+            addressList.innerHTML = sortedAddresses.map(address => {
+                const addrLower = String(address || '').toLowerCase();
+                const count = visitCounts[addrLower] || 0;
+                const isMostVisited = mostVisitedCount > 0 && count === mostVisitedCount;
+                const flagHTML = isMostVisited ? `<span class="address-most-visited">MOST VISITED</span>` : '';
+                return `<div class="address-item" data-address="${escapeHtml(address)}">${escapeHtml(address)}${flagHTML}</div>`;
+            }).join('');
 
             // Attach click handlers to address items
             addressList.querySelectorAll('.address-item').forEach(item => {
