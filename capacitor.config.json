@@ -1,0 +1,8 @@
+{
+  "appId": "com.entrancepass.app",
+  "appName": "Entrance Pass",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
