@@ -3380,6 +3380,12 @@
                 try {
                     cachedOkUntil = localStorage.getItem(LICENSE_CACHE_OK_UNTIL_KEY) || null;
                 } catch (e) {}
+                let cachedLicenseCache = null;
+                try {
+                    cachedLicenseCache = JSON.parse(localStorage.getItem(LICENSE_CACHE_KEY) || 'null');
+                } catch (e) {
+                    cachedLicenseCache = null;
+                }
 
                 function isOkUntilIso(expiresAtIso) {
                     if (!expiresAtIso) return false;
@@ -3390,7 +3396,8 @@
                     }
                 }
 
-                if (cachedOkUntil && isOkUntilIso(cachedOkUntil)) {
+                const cacheMatchesDevice = cachedLicenseCache && (String(cachedLicenseCache.deviceNumber) === String(deviceNum));
+                if (cachedOkUntil && isOkUntilIso(cachedOkUntil) && cacheMatchesDevice) {
                     licenseOkForDevice = true;
                     licenseKnownForDevice = true;
                     licenseDeviceNumber = deviceNum;
@@ -3608,6 +3615,14 @@
             }
 
             const cachedOkUntil = getCachedOkUntilIso();
+            let cachedLicenseCache = null;
+            try {
+                cachedLicenseCache = JSON.parse(localStorage.getItem(LICENSE_CACHE_KEY) || 'null');
+            } catch (e) {
+                cachedLicenseCache = null;
+            }
+
+            const cacheMatchesDevice = cachedLicenseCache && (String(cachedLicenseCache.deviceNumber) === String(deviceNum));
             let isOnline = true;
             try {
                 isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
@@ -3718,7 +3733,7 @@
             }
 
             // 3) No internet, or Firebase failed => fall back to cached expiry, then local trial window
-            if (cachedOkUntil && isOkUntilIso(cachedOkUntil)) {
+            if (cachedOkUntil && isOkUntilIso(cachedOkUntil) && cacheMatchesDevice) {
                 return true;
             }
 
