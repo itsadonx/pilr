@@ -3812,17 +3812,92 @@
             }
         }
 
-        // Print receipt - Direct print without dialog
-        function printReceipt(copyType) {
-            // Update copy label based on copy type
-            const copyLabel = copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY';
-            document.getElementById('receiptCopyLabel').textContent = copyLabel;
-            
-            // Get the receipt container content (after updating the label)
-            const receiptContent = document.getElementById('receiptContainer').innerHTML;
-            
-            // Create a hidden iframe for printing
-            const printFrame = document.createElement('iframe');
+        // Android/iOS: @capgo/capacitor-printer (PrintManager / native UI). Web: iframe print fallback.
+        var _capPrinterPlugin = undefined;
+        function getCapacitorPrinterPlugin() {
+            if (_capPrinterPlugin !== undefined) {
+                return _capPrinterPlugin;
+            }
+            _capPrinterPlugin = null;
+            try {
+                if (typeof Capacitor !== 'undefined' && Capacitor.registerPlugin) {
+                    _capPrinterPlugin = Capacitor.registerPlugin('Printer', {
+                        web: function() {
+                            return {
+                                printHtml: function(options) {
+                                    var html = options.html;
+                                    return new Promise(function(resolve, reject) {
+                                        var frame = document.createElement('iframe');
+                                        frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
+                                        document.body.appendChild(frame);
+                                        frame.onload = function() {
+                                            setTimeout(function() {
+                                                try {
+                                                    frame.contentWindow.focus();
+                                                    var settled = false;
+                                                    function done() {
+                                                        if (settled) return;
+                                                        settled = true;
+                                                        setTimeout(function() {
+                                                            if (frame.parentNode) {
+                                                                frame.parentNode.removeChild(frame);
+                                                            }
+                                                        }, 200);
+                                                        resolve();
+                                                    }
+                                                    frame.contentWindow.addEventListener('afterprint', done);
+                                                    frame.contentWindow.print();
+                                                    setTimeout(done, 2500);
+                                                } catch (err) {
+                                                    if (frame.parentNode) {
+                                                        frame.parentNode.removeChild(frame);
+                                                    }
+                                                    reject(err);
+                                                }
+                                            }, 150);
+                                        };
+                                        var doc = frame.contentDocument || frame.contentWindow.document;
+                                        doc.open();
+                                        doc.write(html);
+                                        doc.close();
+                                    });
+                                }
+                            };
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn('Printer plugin registration failed:', err);
+            }
+            return _capPrinterPlugin;
+        }
+
+        function isCapacitorNativeApp() {
+            try {
+                return typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform();
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function tryNativePrintHtml(html, jobName) {
+            if (!isCapacitorNativeApp()) {
+                return Promise.resolve(false);
+            }
+            var P = getCapacitorPrinterPlugin();
+            if (!P || typeof P.printHtml !== 'function') {
+                return Promise.resolve(false);
+            }
+            return P.printHtml({ html: html, name: jobName || 'Document' }).then(function() {
+                return true;
+            }).catch(function(e) {
+                console.error('Native print failed, using iframe fallback:', e);
+                return false;
+            });
+        }
+
+        function printReceiptHtmlInIframe(htmlContent, saveReceiptOnce) {
+            var printFrame = document.createElement('iframe');
             printFrame.style.position = 'fixed';
             printFrame.style.right = '0';
             printFrame.style.bottom = '0';
@@ -3831,48 +3906,15 @@
             printFrame.style.border = '0';
             printFrame.style.opacity = '0';
             printFrame.style.pointerEvents = 'none';
-            
-            // Add iframe to document
             document.body.appendChild(printFrame);
-            
-            // Track if receipt has been saved to avoid duplicate saves
-            let receiptSaved = false;
-            
-            // Check if this is a reprint (should not save again)
-            const receiptModal = document.getElementById('receiptModal');
-            const isReprint = receiptModal && receiptModal.getAttribute('data-is-reprint') === 'true';
-            
-            // Function to save receipt (with check to prevent duplicates and reprints)
-            function saveReceiptOnce() {
-                // Don't save if this is a reprint or if already saved
-                if (isReprint || receiptSaved) {
-                    return;
-                }
-                receiptSaved = true;
-                saveReceiptToLocalStorage(copyType);
-            }
-            
-            // Wait for iframe to load, then print
             printFrame.onload = function() {
                 try {
-                    // Use setTimeout to ensure content is rendered
                     setTimeout(function() {
                         printFrame.contentWindow.focus();
-                        
-                        // Listen for afterprint event on iframe (when print dialog is closed)
                         printFrame.contentWindow.addEventListener('afterprint', saveReceiptOnce);
-                        
-                        // Also listen on the main window as fallback
                         window.addEventListener('afterprint', saveReceiptOnce, { once: true });
-                        
-                        // Trigger print
                         printFrame.contentWindow.print();
-                        
-                        // Fallback: Save after a delay if afterprint event doesn't fire
-                        // (Some browsers don't support afterprint event reliably)
                         setTimeout(saveReceiptOnce, 1500);
-                        
-                        // Clean up iframe after printing
                         setTimeout(function() {
                             if (printFrame.parentNode) {
                                 document.body.removeChild(printFrame);
@@ -3880,28 +3922,42 @@
                         }, 250);
                     }, 250);
                 } catch (e) {
-                    // Fallback to regular print if iframe method fails
                     console.error('Direct print failed, using fallback:', e);
                     if (printFrame.parentNode) {
                         document.body.removeChild(printFrame);
                     }
-                    // Last resort: use window.print()
                     window.print();
-                    
-                    // Save receipt data after fallback print
                     window.addEventListener('afterprint', saveReceiptOnce, { once: true });
                     setTimeout(saveReceiptOnce, 1500);
                 }
             };
-            
-            // Write content to iframe
-            const printDoc = printFrame.contentDocument || printFrame.contentWindow.document;
+            var printDoc = printFrame.contentDocument || printFrame.contentWindow.document;
             printDoc.open();
-            
-            // Build HTML string safely
-            const htmlContent = '<!DOCTYPE html>' +
+            printDoc.write(htmlContent);
+            printDoc.close();
+        }
+
+        // Print receipt — native Android/iOS print when running in Capacitor; else hidden iframe / window.print.
+        function printReceipt(copyType) {
+            var copyLabel = copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY';
+            document.getElementById('receiptCopyLabel').textContent = copyLabel;
+            var receiptContent = document.getElementById('receiptContainer').innerHTML;
+
+            var receiptModal = document.getElementById('receiptModal');
+            var isReprint = receiptModal && receiptModal.getAttribute('data-is-reprint') === 'true';
+            var receiptSaved = false;
+            function saveReceiptOnce() {
+                if (isReprint || receiptSaved) {
+                    return;
+                }
+                receiptSaved = true;
+                saveReceiptToLocalStorage(copyType);
+            }
+
+            var htmlContent = '<!DOCTYPE html>' +
                 '<html>' +
                 '<head>' +
+                '<meta charset="UTF-8">' +
                 '<title>Receipt</title>' +
                 '<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">' +
                 '<style>' +
@@ -3932,7 +3988,44 @@
                 receiptContent +
                 '</body>' +
                 '</html>';
-            
+
+            tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
+                if (usedNative) {
+                    saveReceiptOnce();
+                    return;
+                }
+                printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
+            });
+        }
+
+        function printHtmlInIframeOnly(htmlContent) {
+            var printFrame = document.createElement('iframe');
+            printFrame.style.position = 'fixed';
+            printFrame.style.right = '0';
+            printFrame.style.bottom = '0';
+            printFrame.style.width = '0';
+            printFrame.style.height = '0';
+            printFrame.style.border = '0';
+            printFrame.style.opacity = '0';
+            printFrame.style.pointerEvents = 'none';
+            document.body.appendChild(printFrame);
+            printFrame.onload = function() {
+                setTimeout(function() {
+                    try {
+                        printFrame.contentWindow.focus();
+                        printFrame.contentWindow.print();
+                    } catch (e) {
+                        console.error('Iframe print failed:', e);
+                    }
+                    setTimeout(function() {
+                        if (printFrame.parentNode) {
+                            document.body.removeChild(printFrame);
+                        }
+                    }, 250);
+                }, 250);
+            };
+            var printDoc = printFrame.contentDocument || printFrame.contentWindow.document;
+            printDoc.open();
             printDoc.write(htmlContent);
             printDoc.close();
         }
@@ -4825,37 +4918,6 @@
 
                 printHTML += '</div>';
 
-                // Create print iframe
-                const printFrame = document.createElement('iframe');
-                printFrame.style.position = 'fixed';
-                printFrame.style.right = '0';
-                printFrame.style.bottom = '0';
-                printFrame.style.width = '0';
-                printFrame.style.height = '0';
-                printFrame.style.border = '0';
-                printFrame.style.opacity = '0';
-                printFrame.style.pointerEvents = 'none';
-                
-                document.body.appendChild(printFrame);
-
-                printFrame.onload = function() {
-                    setTimeout(function() {
-                        printFrame.contentWindow.focus();
-                        printFrame.contentWindow.print();
-                        
-                        // Clean up iframe after printing
-                        setTimeout(function() {
-                            if (printFrame.parentNode) {
-                                document.body.removeChild(printFrame);
-                            }
-                        }, 250);
-                    }, 250);
-                };
-
-                // Write content to iframe
-                const printDoc = printFrame.contentDocument || printFrame.contentWindow.document;
-                printDoc.open();
-                
                 const htmlContent = '<!DOCTYPE html>' +
                     '<html>' +
                     '<head>' +
@@ -4880,9 +4942,12 @@
                     '</div>' +
                     '</body>' +
                     '</html>';
-                
-                printDoc.write(htmlContent);
-                printDoc.close();
+
+                tryNativePrintHtml(htmlContent, 'Reconciliation Report').then(function(usedNative) {
+                    if (!usedNative) {
+                        printHtmlInIframeOnly(htmlContent);
+                    }
+                });
             } catch (e) {
                 console.error('Error printing reconciliation:', e);
                 alert('Error generating print preview. Please try again.');
