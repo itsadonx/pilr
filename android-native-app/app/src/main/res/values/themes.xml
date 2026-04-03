@@ -2,5 +2,6 @@
 <resources>
     <style name="Theme.EntrancePassNative" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:statusBarColor">#2c3e50</item>
+        <item name="android:navigationBarColor">#f5f5f5</item>
     </style>
 </resources>

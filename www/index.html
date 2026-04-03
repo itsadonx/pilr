@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Entrance Pass System</title>
     <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -17,7 +17,126 @@
             background-color: #f5f5f5;
             overflow-x: hidden;
             width: 100vw;
-            height: 100vh;
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        .app-top-bar {
+            width: 100%;
+            background: linear-gradient(180deg, #2c3e50 0%, #243342 100%);
+            color: #fff;
+            padding: 14px 16px;
+            padding-top: calc(14px + env(safe-area-inset-top, 0px));
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            flex-shrink: 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .app-top-bar .app-title {
+            display: block;
+        }
+
+        /* Blocks the whole app until sign-in (master key or Settings user password) */
+        .session-gate {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 2500;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            padding-top: max(24px, env(safe-area-inset-top, 0px));
+            padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+            background: linear-gradient(160deg, #1a252f 0%, #2c3e50 45%, #243342 100%);
+            box-sizing: border-box;
+        }
+
+        .session-gate.active {
+            display: flex;
+        }
+
+        .session-gate-card {
+            width: 100%;
+            max-width: 400px;
+            background: #fff;
+            border-radius: 12px;
+            padding: 28px 24px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+        }
+
+        .session-gate-card h1 {
+            font-size: 22px;
+            margin: 0 0 8px 0;
+            color: #2c3e50;
+            text-align: center;
+        }
+
+        .session-gate-card .session-gate-hint {
+            font-size: 13px;
+            color: #7f8c8d;
+            line-height: 1.5;
+            margin: 0 0 20px 0;
+            text-align: center;
+        }
+
+        .session-gate-card .form-group {
+            margin-bottom: 12px;
+        }
+
+        .session-gate-card label {
+            display: block;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 6px;
+            color: #34495e;
+        }
+
+        .session-gate-card input[type="password"] {
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 16px;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        .session-gate-card input[type="password"]:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+        }
+
+        #gateError {
+            color: #e74c3c;
+            font-size: 13px;
+            margin: 8px 0 0 0;
+            min-height: 1.2em;
+        }
+
+        #gateLoginBtn {
+            width: 100%;
+            margin-top: 16px;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+            background: #3498db;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #gateLoginBtn:hover {
+            background: #2980b9;
+        }
+
+        body.session-locked {
+            overflow: hidden;
         }
 
         .container {
@@ -1486,6 +1605,19 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
+    <div id="sessionGate" class="session-gate" role="dialog" aria-modal="true" aria-labelledby="sessionGateTitle" aria-hidden="true">
+        <div class="session-gate-card">
+            <h1 id="sessionGateTitle">Sign in</h1>
+            <p class="session-gate-hint">This device is locked until you sign in. Use the <strong>master key</strong>, or the password for an account created in <strong>Settings → User</strong>.</p>
+            <div class="form-group">
+                <label for="gate-password">Password</label>
+                <input type="password" id="gate-password" name="password" autocomplete="current-password" placeholder="Enter password">
+            </div>
+            <div id="gateError" style="display: none;"></div>
+            <button type="button" id="gateLoginBtn">Sign in</button>
+        </div>
+    </div>
+
     <div class="container">
         <!-- Sidebar -->
         <div class="sidebar hidden" id="sidebar">
@@ -1516,10 +1648,13 @@
 
         <!-- Main Content -->
         <div class="main-content full-width" id="mainContent">
+            <div class="app-top-bar" role="banner">
+                <span class="app-title">Entrance Pass</span>
+            </div>
             <!-- Top Header -->
             <div class="form-header">
                 <button class="toggle-btn" id="sidebarToggle">☰</button>
-                <div class="ref-number" id="refNumber">REF-260108-0094</div>
+                <div class="ref-number" id="refNumber">REF-D1-260403-0001</div>
                 <div class="date-time" id="dateTime"></div>
             </div>
             
@@ -1577,6 +1712,7 @@
                 <button class="tab-button active" data-tab="pricing">Pricing</button>
                 <button class="tab-button" data-tab="user">User</button>
                 <button class="tab-button" data-tab="entry-type">Activity Type</button>
+                <button class="tab-button" data-tab="device">Device</button>
                 <button class="tab-button" data-tab="barcode">Barcode</button>
             </div>
             <div class="modal-body">
@@ -1608,6 +1744,9 @@
 
                 <!-- User Tab -->
                 <div class="tab-content" id="user-tab">
+                    <p style="color: #7f8c8d; font-size: 13px; line-height: 1.5; margin: 0 0 14px 0;">
+                        Create staff accounts here. Each person signs in on the device with their password. The hardcoded <strong>master key</strong> can always sign in and open Settings.
+                    </p>
                     <div class="table-header">
                         <h3 style="margin: 0;">User Settings</h3>
                         <button class="add-btn" id="addUserBtn">
@@ -1655,6 +1794,23 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- Device Tab -->
+                <div class="tab-content" id="device-tab">
+                    <div class="table-header">
+                        <h3 style="margin: 0;">Device</h3>
+                    </div>
+                    <p style="color: #7f8c8d; font-size: 13px; line-height: 1.5; margin: 12px 0 16px 0;">
+                        Set a unique number for this phone or tablet. Reference numbers use it so different devices never share the same ref (format: <strong>REF-D&lt;n&gt;-YYMMDD-####</strong>, e.g. device <strong>1</strong> → <strong>REF-D1-260403-0001</strong>).
+                    </p>
+                    <div class="form-group">
+                        <label for="deviceNumberInput">Device number (1–999)</label>
+                        <input type="number" id="deviceNumberInput" min="1" max="999" step="1" placeholder="1" style="max-width: 200px;">
+                    </div>
+                    <button class="add-btn" id="saveDeviceNumberBtn" type="button" style="background-color: #3498db; max-width: 280px;">
+                        Save device number
+                    </button>
                 </div>
 
                 <!-- Barcode Tab -->
@@ -2285,14 +2441,57 @@
             });
         }
 
-        // Settings Modal functionality
+        // Settings Modal functionality (tabs scoped to #settingsModal only — avoids clashing with Summary modal tabs)
         const settingsModal = document.getElementById('settingsModal');
         const closeModalBtn = document.getElementById('closeModal');
-        const tabButtons = document.querySelectorAll('.tab-button');
-        const tabContents = document.querySelectorAll('.tab-content');
+        const settingsTabButtons = settingsModal.querySelectorAll('.modal-tabs .tab-button');
+        const settingsTabContents = settingsModal.querySelectorAll('.tab-content');
+
+        const DEVICE_NUMBER_KEY = 'entrancePassDeviceNumber';
+
+        function getDeviceNumber() {
+            try {
+                const v = localStorage.getItem(DEVICE_NUMBER_KEY);
+                const n = parseInt(v, 10);
+                if (!isNaN(n) && n >= 1 && n <= 999) {
+                    return n;
+                }
+            } catch (e) {
+                console.warn('getDeviceNumber:', e);
+            }
+            return 1;
+        }
+
+        function loadDeviceNumberIntoSettings() {
+            const input = document.getElementById('deviceNumberInput');
+            if (input) {
+                input.value = String(getDeviceNumber());
+            }
+        }
+
+        function saveDeviceNumberFromSettings() {
+            const input = document.getElementById('deviceNumberInput');
+            let n = input ? parseInt(input.value, 10) : 1;
+            if (isNaN(n) || n < 1) {
+                n = 1;
+            }
+            if (n > 999) {
+                n = 999;
+            }
+            localStorage.setItem(DEVICE_NUMBER_KEY, String(n));
+            if (input) {
+                input.value = String(n);
+            }
+            const refEl = document.getElementById('refNumber');
+            if (refEl) {
+                refEl.textContent = generateRefNumber();
+            }
+            alert('Device number saved. Reference format: REF-D' + n + '-YYMMDD-####');
+        }
 
         function openSettingsModal() {
             settingsModal.classList.add('active');
+            loadDeviceNumberIntoSettings();
             // Reset to first tab when opening
             switchTab('pricing');
         }
@@ -2311,8 +2510,7 @@
         }
 
         function switchTab(tabName) {
-            // Remove active class from all tabs
-            tabButtons.forEach(btn => {
+            settingsTabButtons.forEach(function(btn) {
                 if (btn.getAttribute('data-tab') === tabName) {
                     btn.classList.add('active');
                 } else {
@@ -2320,8 +2518,7 @@
                 }
             });
 
-            // Show corresponding tab content
-            tabContents.forEach(content => {
+            settingsTabContents.forEach(function(content) {
                 if (content.id === tabName + '-tab') {
                     content.classList.add('active');
                 } else {
@@ -2333,13 +2530,18 @@
         // Close modal button
         closeModalBtn.addEventListener('click', closeSettingsModal);
 
-        // Tab button clicks
-        tabButtons.forEach(btn => {
+        // Tab button clicks (settings modal only)
+        settingsTabButtons.forEach(function(btn) {
             btn.addEventListener('click', function() {
                 const tabName = this.getAttribute('data-tab');
                 switchTab(tabName);
             });
         });
+
+        const saveDeviceNumberBtn = document.getElementById('saveDeviceNumberBtn');
+        if (saveDeviceNumberBtn) {
+            saveDeviceNumberBtn.addEventListener('click', saveDeviceNumberFromSettings);
+        }
 
         // Close modal when clicking outside
         settingsModal.addEventListener('click', function(e) {
@@ -2695,6 +2897,11 @@
         // Master key password (hardcoded)
         const MASTER_KEY_PASSWORD = 'Itpilr2026';
 
+        const sessionGateEl = document.getElementById('sessionGate');
+        const gatePasswordInput = document.getElementById('gate-password');
+        const gateErrorEl = document.getElementById('gateError');
+        const gateLoginBtn = document.getElementById('gateLoginBtn');
+
         // Get current logged in user
         function getCurrentUser() {
             try {
@@ -2720,35 +2927,105 @@
             }
         }
 
+        function applySessionGate() {
+            const authed = !!getCurrentUser();
+            if (!sessionGateEl) {
+                return;
+            }
+            if (authed) {
+                sessionGateEl.classList.remove('active');
+                sessionGateEl.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('session-locked');
+            } else {
+                sessionGateEl.classList.add('active');
+                sessionGateEl.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('session-locked');
+                if (gatePasswordInput) {
+                    gatePasswordInput.value = '';
+                }
+                if (gateErrorEl) {
+                    gateErrorEl.style.display = 'none';
+                    gateErrorEl.textContent = '';
+                }
+                setTimeout(function() {
+                    if (gatePasswordInput) {
+                        gatePasswordInput.focus();
+                    }
+                }, 100);
+            }
+        }
+
+        // Master key or Settings user password
+        function performLogin(passwordRaw) {
+            const password = (passwordRaw || '').trim();
+            if (!password) {
+                return { ok: false, message: 'Please enter password' };
+            }
+            if (password === MASTER_KEY_PASSWORD) {
+                setCurrentUser({
+                    name: 'Master Admin',
+                    role: 'admin',
+                    isMasterKey: true
+                });
+                return { ok: true };
+            }
+            const user = userData.find(function(u) {
+                return u.password === password;
+            });
+            if (user) {
+                setCurrentUser({
+                    name: user.name,
+                    role: user.role,
+                    isMasterKey: false
+                });
+                return { ok: true };
+            }
+            return { ok: false, message: 'Invalid password' };
+        }
+
+        function gateSubmit() {
+            const result = performLogin(gatePasswordInput ? gatePasswordInput.value : '');
+            if (result.ok) {
+                return;
+            }
+            if (gateErrorEl) {
+                gateErrorEl.textContent = result.message || 'Sign-in failed';
+                gateErrorEl.style.display = 'block';
+            }
+        }
+
         // Update login/logout UI visibility
         function updateLoginUI() {
             const currentUser = getCurrentUser();
             if (currentUser) {
-                // User is logged in - show logout, hide login
                 if (loginMenuItem) loginMenuItem.classList.add('hidden');
                 if (logoutMenuItem) logoutMenuItem.classList.remove('hidden');
-                // Update sidebar header to show user name
                 if (sidebarHeader) {
                     sidebarHeader.textContent = currentUser.name;
                 }
             } else {
-                // User is not logged in - show login, hide logout
-                if (loginMenuItem) loginMenuItem.classList.remove('hidden');
+                if (loginMenuItem) loginMenuItem.classList.add('hidden');
                 if (logoutMenuItem) logoutMenuItem.classList.add('hidden');
-                // Reset sidebar header to default
                 if (sidebarHeader) {
                     sidebarHeader.textContent = 'Entrance Pass System';
                 }
             }
+            applySessionGate();
         }
 
-        // Open login modal
+        // Open login modal (only used when already signed in — e.g. future “switch user”)
         function openLoginModal() {
+            if (!getCurrentUser()) {
+                applySessionGate();
+                return;
+            }
             loginModal.classList.add('active');
             loginPasswordInput.value = '';
             loginError.style.display = 'none';
             loginError.textContent = '';
-            setTimeout(() => loginPasswordInput.focus(), 100);
+            setTimeout(function() {
+                loginPasswordInput.focus();
+            }, 100);
         }
 
         // Close login modal
@@ -2759,44 +3036,12 @@
             loginError.textContent = '';
         }
 
-        // Login function
         function login() {
-            const password = loginPasswordInput.value.trim();
-
-            if (!password) {
-                loginError.textContent = 'Please enter password';
-                loginError.style.display = 'block';
-                return;
-            }
-
-            // Check master key first
-            if (password === MASTER_KEY_PASSWORD) {
-                // Master key login successful - full admin access
-                setCurrentUser({
-                    name: 'Master Admin',
-                    role: 'admin',
-                    isMasterKey: true
-                });
+            const result = performLogin(loginPasswordInput.value);
+            if (result.ok) {
                 closeLoginModal();
-                alert('Master key login successful! Full access granted.');
-                return;
-            }
-
-            // Find user by password only (first matching password)
-            const user = userData.find(u => u.password === password);
-
-            if (user) {
-                // Login successful
-                setCurrentUser({
-                    name: user.name,
-                    role: user.role,
-                    isMasterKey: false
-                });
-                closeLoginModal();
-                alert('Login successful! Welcome ' + user.name);
             } else {
-                // Login failed
-                loginError.textContent = 'Invalid password';
+                loginError.textContent = result.message || 'Invalid password';
                 loginError.style.display = 'block';
             }
         }
@@ -2804,7 +3049,18 @@
         // Logout function
         function logout() {
             setCurrentUser(null);
-            alert('Logged out successfully');
+        }
+
+        if (gateLoginBtn) {
+            gateLoginBtn.addEventListener('click', gateSubmit);
+        }
+        if (gatePasswordInput) {
+            gatePasswordInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    gateSubmit();
+                }
+            });
         }
 
         // Login modal event listeners
@@ -3017,14 +3273,16 @@
         // Main Form Functionality
         let pricingQuantities = {}; // Store quantities for each pricing entry
 
-        // Reference Number - last 4 digits = (count of today's transactions overall, all users) + 1
-        // Ref is global so it keeps incrementing across all users; History still shows only current user's
+        // Reference: REF-D{device}-YYMMDD-#### — device number from Settings (1–999); count = today's txs on this device only
         function generateRefNumber() {
+            const deviceNum = getDeviceNumber();
             const now = new Date();
-            const year = now.getFullYear().toString().substr(-2);
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            
+            const yy = now.getFullYear().toString().substr(-2);
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const yymmdd = yy + mm + dd;
+            const prefixToday = 'REF-D' + deviceNum + '-' + yymmdd + '-';
+
             let transactionCount = 0;
             try {
                 const existingReceipts = localStorage.getItem('receiptHistory');
@@ -3034,26 +3292,27 @@
                     const todayEnd = new Date(todayStart);
                     todayEnd.setDate(todayEnd.getDate() + 1);
                     transactionCount = receipts.filter(function(receipt) {
-                        if (!receipt.timestamp) return false;
+                        if (!receipt.timestamp || !receipt.refNumber) return false;
                         const d = new Date(receipt.timestamp);
-                        return d >= todayStart && d < todayEnd;
+                        if (d < todayStart || d >= todayEnd) return false;
+                        return String(receipt.refNumber).indexOf(prefixToday) === 0;
                     }).length;
                 }
             } catch (e) {
                 console.error('Error counting transactions:', e);
             }
-            
-            const transactionNumber = String(transactionCount + 1).padStart(4, '0');
-            return `REF-${year}${month}${day}-${transactionNumber}`;
+
+            const seq = String(transactionCount + 1).padStart(4, '0');
+            return prefixToday + seq;
         }
 
-        // Given a ref number (e.g. REF-260212-0001), return the next one (REF-260212-0002)
+        // Next ref after current (same device + date segment); falls back to generateRefNumber if format unknown
         function getNextRefNumber(currentRef) {
             if (!currentRef || typeof currentRef !== 'string') return generateRefNumber();
-            const match = currentRef.trim().match(/^REF-(\d{6})-(\d+)$/i);
-            if (!match) return generateRefNumber();
-            const prefix = 'REF-' + match[1] + '-';
-            const num = parseInt(match[2], 10);
+            const m = currentRef.trim().match(/^REF-D(\d+)-(\d{6})-(\d+)$/i);
+            if (!m) return generateRefNumber();
+            const prefix = 'REF-D' + m[1] + '-' + m[2] + '-';
+            const num = parseInt(m[3], 10);
             const nextNum = (isNaN(num) ? 1 : num + 1);
             return prefix + String(nextNum).padStart(4, '0');
         }
