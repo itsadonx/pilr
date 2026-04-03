@@ -3402,15 +3402,16 @@
                     licenseKnownForDevice = true;
                     licenseDeviceNumber = deviceNum;
 
-                    // Background refresh when online; don't lock UI since cached license is valid.
-                    let isOnline = true;
+                    // Background refresh: WebView may misreport navigator.onLine,
+                    // so we attempt Firebase init directly (and ignore failures).
+                    let firebaseReady = false;
                     try {
-                        isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+                        firebaseReady = !!initializeFirebase() && !!db;
                     } catch (e) {
-                        isOnline = true;
+                        firebaseReady = false;
                     }
 
-                    if (isOnline) {
+                    if (firebaseReady) {
                         licenseChecking = true;
                         if (sessionGateHintTextEl) {
                             sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
@@ -3623,12 +3624,8 @@
             }
 
             const cacheMatchesDevice = cachedLicenseCache && (String(cachedLicenseCache.deviceNumber) === String(deviceNum));
+            // Don't rely on navigator.onLine in WebView; we will attempt Firebase init + fetch anyway.
             let isOnline = true;
-            try {
-                isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
-            } catch (e) {
-                isOnline = true;
-            }
 
             function getTrialStartIsoForDevice() {
                 const perDeviceKey = TRIAL_START_KEY_PREFIX + String(deviceNum);
