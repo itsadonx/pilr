@@ -2110,6 +2110,54 @@
         </div>
     </div>
 
+    <!-- Cancel Transaction Choice Modal -->
+    <div class="modal-overlay" id="cancelChoiceModal">
+        <div class="modal" style="max-width: 420px;">
+            <div class="modal-header">
+                <span>Cancel Transaction</span>
+                <button class="modal-close" id="closeCancelChoiceModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="color: #7f8c8d; font-size: 13px; line-height: 1.5; margin-bottom: 16px;">
+                    Request cancel or enter password to cancel.
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="add-btn" id="requestCancelBtn" style="flex: 1; background-color: #e74c3c;">
+                        Request cancel
+                    </button>
+                    <button class="add-btn" id="passwordCancelBtn" style="flex: 1; background-color: #3498db;">
+                        Enter password to cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cancel Now Password Modal (Admin/Master only) -->
+    <div class="modal-overlay" id="cancelPasswordModal">
+        <div class="modal" style="max-width: 420px;">
+            <div class="modal-header">
+                <span>Admin Password Required</span>
+                <button class="modal-close" id="closeCancelPasswordModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="cancel-password">Enter admin password or master key</label>
+                    <input type="password" id="cancel-password" placeholder="Enter password">
+                </div>
+                <div id="cancelPasswordError" style="color: #e74c3c; margin-bottom: 15px; display: none;"></div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="add-btn" id="cancelPasswordSubmitBtn" style="flex: 1; background-color: #e74c3c;">
+                        Cancel now
+                    </button>
+                    <button class="add-btn" id="cancelPasswordCancelBtn" style="flex: 1; background-color: #95a5a6;">
+                        Back
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Sync Modal -->
     <div class="modal-overlay" id="syncModal">
         <div class="modal" style="max-width: 600px;">
@@ -2290,7 +2338,7 @@
                 <div class="receipt-container" id="receiptContainer">
                     <div class="receipt-header">
                         <div class="receipt-title">PUNTA ISLA LAKE RESORT</div>
-                        <div class="receipt-address">Sitio Tuko-Fol, Lake Sebu, South Cotabato, 9514</div>
+                        <div class="receipt-address" id="receiptTopAddress"></div>
                         <div class="receipt-subtitle">ENTRANCE PASS</div>
                         <div class="receipt-copy-label" id="receiptCopyLabel">CASHIER'S COPY</div>
                     </div>
@@ -3792,11 +3840,13 @@
                 } else {
                     // Initialize with some sample addresses if none exist (already capitalized)
                     addressData = [
-                        '123 Main Street, Manila',
-                        '456 Oak Avenue, Quezon City',
-                        '789 Pine Road, Makati',
-                        '321 Elm Street, Pasig',
-                        '654 Maple Drive, Mandaluyong'
+                        'Gensan',
+                        'Polomolok',
+                        'Tupi',
+                        'Koronadal City',
+                        'Lake Sebu',
+                        'Davao',
+                        'Manila'
                     ];
                     saveAddressesToLocalStorage();
                 }
@@ -4034,6 +4084,12 @@
             document.getElementById('receiptPlateNo').textContent = plateNo;
             document.getElementById('receiptAddress').textContent = address || '';
             document.getElementById('receiptUserType').textContent = '';
+
+            // Top address line on the receipt should match the selected Address (city list)
+            const receiptTopAddressEl = document.getElementById('receiptTopAddress');
+            if (receiptTopAddressEl) {
+                receiptTopAddressEl.textContent = address || '';
+            }
             
             // Set Created By field
             const currentUser = getCurrentUser();
@@ -4056,25 +4112,8 @@
             // Clear reprint flag (this is a new receipt, should be saved)
             receiptModal.removeAttribute('data-is-reprint');
 
-            // Save receipt to localStorage when we show it, so transaction count goes up
-            // and the next ref number will be count+1 (e.g. 3 transactions -> next is 0004)
-            saveReceiptToLocalStorage('cashier');
-
             // Show receipt modal
             receiptModal.classList.add('active');
-
-            // Android: auto-open system print after Generate Pass (native shell or Capacitor)
-            try {
-                var autoPrint = hasAndroidPrintBridge() ||
-                    (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.getPlatform && Capacitor.getPlatform() === 'android');
-                if (autoPrint) {
-                    setTimeout(function() {
-                        printReceipt('cashier', { skipSave: true });
-                    }, 450);
-                }
-            } catch (e) {
-                console.warn('Auto-print after generate:', e);
-            }
         }
 
         // Close receipt modal - start new transaction with ref = history count + 1
@@ -5276,8 +5315,7 @@
                 printHTML += '<div style="text-align: center; margin-bottom: 5px;">';
                 printHTML += '<div style="font-size: 11pt; font-weight: bold; margin-bottom: 2px; letter-spacing: 0.5px;">PUNTA ISLA</div>';
                 printHTML += '<div style="font-size: 11pt; font-weight: bold; margin-bottom: 2px; letter-spacing: 0.5px;">LAKE RESORT</div>';
-                printHTML += '<div style="font-size: 7pt; margin-bottom: 3px;">Sitio Tuko-Fol, Lake Sebu</div>';
-                printHTML += '<div style="font-size: 7pt; margin-bottom: 5px;">South Cotabato, 9514</div>';
+                // Address lines intentionally omitted for cleanliness
                 printHTML += '<div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; margin-bottom: 5px;">';
                 printHTML += '<div style="font-size: 10pt; font-weight: bold;">RECONCILIATION REPORT</div>';
                 printHTML += '</div>';
@@ -5781,6 +5819,12 @@
                 document.getElementById('receiptPlateNo').textContent = receipt.plateNo || 'N/A';
                 document.getElementById('receiptAddress').textContent = receipt.address || '';
                 document.getElementById('receiptUserType').textContent = receipt.userType || '';
+
+                // Top address line
+                const receiptTopAddressEl = document.getElementById('receiptTopAddress');
+                if (receiptTopAddressEl) {
+                    receiptTopAddressEl.textContent = receipt.address || '';
+                }
                 
                 // Set Created By field
                 const receiptCreatedByRow = document.getElementById('receiptCreatedByRow');
@@ -5827,61 +5871,238 @@
         }
 
         // Cancel transaction function
-        function cancelTransaction(receiptId) {
-            if (!confirm('Are you sure you want to cancel this transaction?')) {
-                return;
-            }
+        let pendingCancelReceiptId = null;
 
+        const cancelChoiceModal = document.getElementById('cancelChoiceModal');
+        const closeCancelChoiceModalBtn = document.getElementById('closeCancelChoiceModal');
+        const requestCancelBtn = document.getElementById('requestCancelBtn');
+        const passwordCancelBtn = document.getElementById('passwordCancelBtn');
+
+        const cancelPasswordModal = document.getElementById('cancelPasswordModal');
+        const closeCancelPasswordModalBtn = document.getElementById('closeCancelPasswordModal');
+        const cancelPasswordSubmitBtn = document.getElementById('cancelPasswordSubmitBtn');
+        const cancelPasswordCancelBtn = document.getElementById('cancelPasswordCancelBtn');
+        const cancelPasswordInput = document.getElementById('cancel-password');
+        const cancelPasswordError = document.getElementById('cancelPasswordError');
+
+        function closeCancelChoiceModal() {
+            if (cancelChoiceModal) {
+                cancelChoiceModal.classList.remove('active');
+            }
+        }
+
+        function closeCancelPasswordModal() {
+            if (cancelPasswordModal) {
+                cancelPasswordModal.classList.remove('active');
+            }
+        }
+
+        function openCancelChoiceModal(receiptId) {
+            pendingCancelReceiptId = receiptId;
+            if (cancelChoiceModal) {
+                cancelChoiceModal.classList.add('active');
+            }
+        }
+
+        function openCancelPasswordModal() {
+            if (cancelPasswordModal) {
+                cancelPasswordModal.classList.add('active');
+            }
+            if (cancelPasswordInput) {
+                cancelPasswordInput.value = '';
+                setTimeout(function() {
+                    cancelPasswordInput.focus();
+                }, 50);
+            }
+            if (cancelPasswordError) {
+                cancelPasswordError.style.display = 'none';
+                cancelPasswordError.textContent = '';
+            }
+        }
+
+        function isAdminOrMasterPassword(password) {
+            if (!password) return false;
+            if (password === MASTER_KEY_PASSWORD) return true;
+            return Array.isArray(userData) && userData.some(function(u) {
+                return (u && u.role && u.role.toLowerCase() === 'admin' && u.password === password);
+            });
+        }
+
+        function reloadHistoryAfterCancel() {
+            const searchInput = document.getElementById('historySearchInput');
+            loadTodayHistory(
+                searchInput ? searchInput.value : '',
+                currentFilter.type,
+                currentFilter.dateFrom,
+                currentFilter.dateTo,
+                currentFilter.timeFrom,
+                currentFilter.timeTo,
+                currentFilter.status
+            );
+            updateHistoryModalTitle();
+        }
+
+        function submitCancellationRequest(receiptId) {
             try {
-                // Load receipts from localStorage
                 const existingReceipts = localStorage.getItem('receiptHistory');
                 let receipts = [];
-                
                 if (existingReceipts) {
-                    try {
-                        receipts = JSON.parse(existingReceipts);
-                    } catch (e) {
-                        console.error('Error loading receipt history:', e);
-                        alert('Error loading transaction data.');
-                        return;
-                    }
+                    receipts = JSON.parse(existingReceipts);
                 }
 
-                // Find the receipt
-                const receiptIndex = receipts.findIndex(r => r.id === receiptId);
+                const receiptIndex = receipts.findIndex(function(r) { return r.id === receiptId; });
                 if (receiptIndex === -1) {
                     alert('Transaction not found.');
                     return;
                 }
 
-                // Update status to Pending Cancellation
                 receipts[receiptIndex].status = 'Pending Cancellation';
                 receipts[receiptIndex].cancelRequestedAt = new Date().toISOString();
-                
-                // Save back to localStorage
+
                 localStorage.setItem('receiptHistory', JSON.stringify(receipts));
-                
-                // Sync cancellation request to Firebase
+
                 syncCancellationRequestToFirebase(receipts[receiptIndex]);
-                
-                // Reload history to reflect the change
-                const searchInput = document.getElementById('historySearchInput');
-                loadTodayHistory(
-                    searchInput ? searchInput.value : '',
-                    currentFilter.type,
-                    currentFilter.dateFrom,
-                    currentFilter.dateTo,
-                    currentFilter.timeFrom,
-                    currentFilter.timeTo,
-                    currentFilter.status
-                );
-                updateHistoryModalTitle();
-                
+
+                reloadHistoryAfterCancel();
                 alert('Cancellation request submitted. Waiting for approval.');
             } catch (e) {
-                console.error('Error cancelling transaction:', e);
+                console.error('Error cancelling transaction (request):', e);
+                alert('Error requesting cancellation. Please try again.');
+            }
+        }
+
+        function syncCancellationApprovalToFirebase(receipt, approvedAtIso) {
+            try {
+                if (!initializeFirebase() || !db) {
+                    return;
+                }
+                db.ref('cancellationApprovals/' + receipt.id).set({
+                    status: 'approved',
+                    approvedAt: approvedAtIso
+                });
+            } catch (e) {
+                console.error('Error syncing cancellation approval to Firebase:', e);
+            }
+        }
+
+        function cancelNowWithPassword() {
+            const receiptId = pendingCancelReceiptId;
+            const password = cancelPasswordInput ? cancelPasswordInput.value.trim() : '';
+
+            if (!receiptId) {
+                closeCancelPasswordModal();
+                return;
+            }
+
+            if (!password) {
+                if (cancelPasswordError) {
+                    cancelPasswordError.textContent = 'Please enter password';
+                    cancelPasswordError.style.display = 'block';
+                }
+                return;
+            }
+
+            if (!isAdminOrMasterPassword(password)) {
+                if (cancelPasswordError) {
+                    cancelPasswordError.textContent = 'Invalid admin password';
+                    cancelPasswordError.style.display = 'block';
+                }
+                return;
+            }
+
+            try {
+                const existingReceipts = localStorage.getItem('receiptHistory');
+                let receipts = [];
+                if (existingReceipts) {
+                    receipts = JSON.parse(existingReceipts);
+                }
+
+                const receiptIndex = receipts.findIndex(function(r) { return r.id === receiptId; });
+                if (receiptIndex === -1) {
+                    alert('Transaction not found.');
+                    closeCancelPasswordModal();
+                    return;
+                }
+
+                const nowIso = new Date().toISOString();
+                receipts[receiptIndex].status = 'Cancelled';
+                receipts[receiptIndex].cancelledAt = nowIso;
+                receipts[receiptIndex].approvedAt = nowIso;
+
+                localStorage.setItem('receiptHistory', JSON.stringify(receipts));
+                syncCancellationApprovalToFirebase(receipts[receiptIndex], nowIso);
+
+                closeCancelPasswordModal();
+                reloadHistoryAfterCancel();
+                alert('Transaction cancelled successfully.');
+            } catch (e) {
+                console.error('Error cancelling transaction (password):', e);
                 alert('Error cancelling transaction. Please try again.');
             }
+        }
+
+        // Hook up cancel modals
+        if (requestCancelBtn) {
+            requestCancelBtn.addEventListener('click', function() {
+                closeCancelChoiceModal();
+                if (pendingCancelReceiptId) {
+                    submitCancellationRequest(pendingCancelReceiptId);
+                }
+            });
+        }
+
+        if (passwordCancelBtn) {
+            passwordCancelBtn.addEventListener('click', function() {
+                closeCancelChoiceModal();
+                openCancelPasswordModal();
+            });
+        }
+
+        if (closeCancelChoiceModalBtn) {
+            closeCancelChoiceModalBtn.addEventListener('click', closeCancelChoiceModal);
+        }
+
+        if (closeCancelPasswordModalBtn) {
+            closeCancelPasswordModalBtn.addEventListener('click', closeCancelPasswordModal);
+        }
+
+        if (cancelPasswordCancelBtn) {
+            cancelPasswordCancelBtn.addEventListener('click', function() {
+                closeCancelPasswordModal();
+                // Back to choice modal
+                if (pendingCancelReceiptId) {
+                    openCancelChoiceModal(pendingCancelReceiptId);
+                }
+            });
+        }
+
+        if (cancelChoiceModal) {
+            cancelChoiceModal.addEventListener('click', function(e) {
+                if (e.target === cancelChoiceModal) {
+                    closeCancelChoiceModal();
+                }
+            });
+        }
+
+        if (cancelPasswordModal) {
+            cancelPasswordModal.addEventListener('click', function(e) {
+                if (e.target === cancelPasswordModal) {
+                    closeCancelPasswordModal();
+                }
+            });
+        }
+
+        if (cancelPasswordInput) {
+            cancelPasswordInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    cancelNowWithPassword();
+                }
+            });
+        }
+
+        function cancelTransaction(receiptId) {
+            openCancelChoiceModal(receiptId);
         }
 
         // Sync cancellation request to Firebase
