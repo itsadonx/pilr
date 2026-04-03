@@ -3202,8 +3202,6 @@
 
             const currentUser = getCurrentUser();
             const authed = !!currentUser;
-            const isMaster = !!(currentUser && currentUser.isMasterKey);
-
             if (!authed) {
                 // Not signed in: show gate for password input
                 sessionGateEl.classList.add('active');
@@ -3227,19 +3225,7 @@
                 return;
             }
 
-            // Signed in as master: always allow
-            if (isMaster) {
-                licenseChecking = false;
-                licenseKnownForDevice = true;
-                licenseOkForDevice = true;
-                licenseDeviceNumber = getDeviceNumber();
-                sessionGateEl.classList.remove('active');
-                sessionGateEl.setAttribute('aria-hidden', 'true');
-                document.body.classList.remove('session-locked');
-                return;
-            }
-
-            // Non-master: enforce device license (trial/pro)
+            // Enforce device license (trial/pro) for all users (admins + master key)
             const deviceNum = getDeviceNumber();
             if (licenseDeviceNumber !== deviceNum) {
                 licenseKnownForDevice = false;
