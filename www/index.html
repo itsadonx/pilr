@@ -448,6 +448,44 @@
             max-width: 100%;
         }
 
+        /* Off-screen host for Android/iOS Capacitor: Printer.printWebView() uses the real Bridge WebView */
+        #cap-print-root {
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            margin: 0;
+            padding: 0;
+            pointer-events: none;
+        }
+
+        @media print {
+            body.cap-print-job-active .container,
+            body.cap-print-job-active .modal-overlay {
+                display: none !important;
+            }
+            body.cap-print-job-active #cap-print-root,
+            body.cap-print-job-active #cap-print-root * {
+                visibility: visible !important;
+            }
+            body.cap-print-job-active #cap-print-root {
+                display: block !important;
+                position: static !important;
+                left: auto !important;
+                top: auto !important;
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+                clip: auto !important;
+                pointer-events: auto !important;
+                padding: 12px;
+                background: #fff;
+            }
+        }
+
         @media print {
             .receipt-container {
                 padding: 0;
@@ -2133,6 +2171,8 @@
             </div>
         </div>
     </div>
+
+    <div id="cap-print-root" aria-hidden="true"></div>
 
     <script>
         // Sidebar toggle functionality
@@ -3922,6 +3962,68 @@
             });
         }
 
+        /** Uses the real Capacitor WebView — most reliable on Android (PrintManager + laid-out DOM). */
+        function tryCapacitorPrintWebView(jobName) {
+            if (!isCapacitorNativeApp()) {
+                return Promise.resolve(false);
+            }
+            var P = getCapacitorPrinterPlugin();
+            if (!P || typeof P.printWebView !== 'function') {
+                return Promise.resolve(false);
+            }
+            return P.printWebView({ name: jobName || 'Document' }).then(function() {
+                return true;
+            }).catch(function(e) {
+                console.error('printWebView failed:', e);
+                return false;
+            });
+        }
+
+        function buildReceiptHtmlDocument(receiptContent) {
+            return '<!DOCTYPE html>' +
+                '<html>' +
+                '<head>' +
+                '<meta charset="UTF-8">' +
+                '<title>Receipt</title>' +
+                '<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">' +
+                '<style>' +
+                '@media print {' +
+                '  @page { margin: 0; size: auto; }' +
+                '  body { margin: 0; padding: 0; }' +
+                '}' +
+                '* { margin: 0; padding: 0; box-sizing: border-box; }' +
+                'body { font-family: \'Kalam\', cursive, sans-serif; padding: 20px; background-color: white; }' +
+                '.receipt-header { text-align: center; margin-bottom: 15px; }' +
+                '.receipt-title { font-size: 22px; font-weight: bold; margin-bottom: 5px; letter-spacing: 1px; }' +
+                '.receipt-address { font-size: 12px; margin-bottom: 10px; line-height: 1.4; }' +
+                '.receipt-subtitle { font-size: 16px; font-weight: bold; margin-bottom: 5px; text-align: center; }' +
+                '.receipt-copy-label { font-size: 12px; text-align: center; margin-bottom: 10px; font-style: italic; }' +
+                '.receipt-divider { border-top: 1px dashed #000; margin: 15px 0; }' +
+                '.receipt-details { font-size: 13px; line-height: 1.8; margin-bottom: 10px; }' +
+                '.receipt-detail-row { display: flex; justify-content: space-between; margin-bottom: 5px; }' +
+                '.receipt-detail-label { font-weight: bold; }' +
+                '.receipt-detail-value { flex: 1; text-align: right; }' +
+                '.receipt-pricing { margin: 15px 0; }' +
+                '.receipt-pricing-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }' +
+                '.receipt-totals { margin-top: 15px; font-size: 14px; }' +
+                '.receipt-total-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: bold; }' +
+                '.receipt-footer { text-align: center; margin-top: 20px; font-size: 13px; font-style: italic; }' +
+                '</style>' +
+                '</head>' +
+                '<body>' +
+                receiptContent +
+                '</body>' +
+                '</html>';
+        }
+
+        function clearCapPrintHost() {
+            var printRoot = document.getElementById('cap-print-root');
+            if (printRoot) {
+                printRoot.innerHTML = '';
+            }
+            document.body.classList.remove('cap-print-job-active');
+        }
+
         function tryNativePrintHtml(html, jobName) {
             if (!isCapacitorNativeApp()) {
                 return Promise.resolve(false);
@@ -3935,7 +4037,7 @@
                     return np.printHtml({ html: optimized, name: name }).then(function() {
                         return true;
                     }).catch(function(e) {
-                        console.error('Android NativePrint failed, trying Capgo:', e);
+                        console.error('Android NativePrint failed, trying Capgo printHtml:', e);
                         return tryCapgoPrintHtml(html, name);
                     });
                 }
@@ -3985,7 +4087,7 @@
             printDoc.close();
         }
 
-        // Print receipt — native Android/iOS print when running in Capacitor; else hidden iframe / window.print.
+        // Print receipt — Capacitor: main WebView print first; then native HTML / iframe fallbacks.
         function printReceipt(copyType) {
             var copyLabel = copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY';
             document.getElementById('receiptCopyLabel').textContent = copyLabel;
@@ -4002,48 +4104,33 @@
                 saveReceiptToLocalStorage(copyType);
             }
 
-            var htmlContent = '<!DOCTYPE html>' +
-                '<html>' +
-                '<head>' +
-                '<meta charset="UTF-8">' +
-                '<title>Receipt</title>' +
-                '<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">' +
-                '<style>' +
-                '@media print {' +
-                '  @page { margin: 0; size: auto; }' +
-                '  body { margin: 0; padding: 0; }' +
-                '}' +
-                '* { margin: 0; padding: 0; box-sizing: border-box; }' +
-                'body { font-family: \'Kalam\', cursive, sans-serif; padding: 20px; background-color: white; }' +
-                '.receipt-header { text-align: center; margin-bottom: 15px; }' +
-                '.receipt-title { font-size: 22px; font-weight: bold; margin-bottom: 5px; letter-spacing: 1px; }' +
-                '.receipt-address { font-size: 12px; margin-bottom: 10px; line-height: 1.4; }' +
-                '.receipt-subtitle { font-size: 16px; font-weight: bold; margin-bottom: 5px; text-align: center; }' +
-                '.receipt-copy-label { font-size: 12px; text-align: center; margin-bottom: 10px; font-style: italic; }' +
-                '.receipt-divider { border-top: 1px dashed #000; margin: 15px 0; }' +
-                '.receipt-details { font-size: 13px; line-height: 1.8; margin-bottom: 10px; }' +
-                '.receipt-detail-row { display: flex; justify-content: space-between; margin-bottom: 5px; }' +
-                '.receipt-detail-label { font-weight: bold; }' +
-                '.receipt-detail-value { flex: 1; text-align: right; }' +
-                '.receipt-pricing { margin: 15px 0; }' +
-                '.receipt-pricing-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }' +
-                '.receipt-totals { margin-top: 15px; font-size: 14px; }' +
-                '.receipt-total-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: bold; }' +
-                '.receipt-footer { text-align: center; margin-top: 20px; font-size: 13px; font-style: italic; }' +
-                '</style>' +
-                '</head>' +
-                '<body>' +
-                receiptContent +
-                '</body>' +
-                '</html>';
+            var htmlContent = buildReceiptHtmlDocument(receiptContent);
 
-            tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
-                if (usedNative) {
-                    saveReceiptOnce();
-                    return;
-                }
+            if (!isCapacitorNativeApp()) {
                 printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
-            });
+                return;
+            }
+
+            var printRoot = document.getElementById('cap-print-root');
+            printRoot.innerHTML = '<div class="receipt-container">' + receiptContent + '</div>';
+            document.body.classList.add('cap-print-job-active');
+
+            setTimeout(function() {
+                tryCapacitorPrintWebView('Entrance Pass Receipt').then(function(ok) {
+                    clearCapPrintHost();
+                    if (ok) {
+                        saveReceiptOnce();
+                        return;
+                    }
+                    tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
+                        if (usedNative) {
+                            saveReceiptOnce();
+                            return;
+                        }
+                        printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
+                    });
+                });
+            }, 150);
         }
 
         function printHtmlInIframeOnly(htmlContent) {
@@ -4991,11 +5078,28 @@
                     '</body>' +
                     '</html>';
 
-                tryNativePrintHtml(htmlContent, 'Reconciliation Report').then(function(usedNative) {
-                    if (!usedNative) {
-                        printHtmlInIframeOnly(htmlContent);
-                    }
-                });
+                if (!isCapacitorNativeApp()) {
+                    printHtmlInIframeOnly(htmlContent);
+                    return;
+                }
+
+                var reconPrintRoot = document.getElementById('cap-print-root');
+                reconPrintRoot.innerHTML = '<div class="recon-print-outer">' + printHTML + '</div>';
+                document.body.classList.add('cap-print-job-active');
+
+                setTimeout(function() {
+                    tryCapacitorPrintWebView('Reconciliation Report').then(function(ok) {
+                        clearCapPrintHost();
+                        if (ok) {
+                            return;
+                        }
+                        tryNativePrintHtml(htmlContent, 'Reconciliation Report').then(function(usedNative) {
+                            if (!usedNative) {
+                                printHtmlInIframeOnly(htmlContent);
+                            }
+                        });
+                    });
+                }, 150);
             } catch (e) {
                 console.error('Error printing reconciliation:', e);
                 alert('Error generating print preview. Please try again.');
