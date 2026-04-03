@@ -87,6 +87,95 @@
             display: flex;
         }
 
+        /* Splash screen (shows before login/session gate) */
+        .splash-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(160deg, #1a252f 0%, #2c3e50 45%, #243342 100%);
+            color: #fff;
+        }
+
+        .splash-card {
+            width: 100%;
+            max-width: 520px;
+            padding: 28px 22px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .splash-logo {
+            width: 96px;
+            height: 96px;
+            object-fit: contain;
+            margin: 0 auto 16px auto;
+            display: block;
+            animation: splashFloat 1.4s ease-in-out infinite;
+            filter: brightness(1.02);
+        }
+
+        @keyframes splashFloat {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-6px); }
+            100% { transform: translateY(0); }
+        }
+
+        .splash-resort {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            letter-spacing: 0.2px;
+        }
+
+        .splash-app {
+            font-size: 30px;
+            font-weight: 800;
+            margin-bottom: 10px;
+            letter-spacing: 0.6px;
+        }
+
+        .splash-credit {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.88);
+            line-height: 1.4;
+        }
+
+        .splash-loading {
+            width: 80%;
+            max-width: 360px;
+            margin: 18px auto 0 auto;
+            height: 10px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 999px;
+            overflow: hidden;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+        }
+
+        .splash-loading-bar {
+            height: 100%;
+            width: 0%;
+            background: #3498db;
+            border-radius: 999px;
+            transition: width 120ms linear;
+        }
+
+        .splash-loading-text {
+            margin-top: 10px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .splash-screen.fade-out {
+            animation: splashFadeOut 0.35s ease forwards;
+        }
+
+        @keyframes splashFadeOut {
+            to { opacity: 0; transform: scale(0.99); }
+        }
+
         .session-gate-card {
             width: 100%;
             max-width: 400px;
@@ -1665,6 +1754,20 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
+    <div id="splashScreen" class="splash-screen" aria-hidden="false">
+        <div class="splash-card">
+            <img class="splash-logo" src="logo.jpeg" alt="App logo">
+            <div class="splash-resort">Punta Isla Lake Resort</div>
+            <div class="splash-app">Entrance Pass</div>
+            <div class="splash-credit">Developed by: Adonnis Pama</div>
+            <div class="splash-credit">Powered by ASystems</div>
+            <div class="splash-loading" aria-label="Loading">
+                <div class="splash-loading-bar" id="splashLoadingBar"></div>
+            </div>
+            <div class="splash-loading-text" id="splashLoadingText">Loading...</div>
+        </div>
+    </div>
+
     <div id="sessionGate" class="session-gate" role="dialog" aria-modal="true" aria-labelledby="sessionGateTitle" aria-hidden="true">
         <div class="session-gate-card">
             <img class="gate-brand-logo" src="logo.jpeg" alt="App logo">
@@ -3226,8 +3329,47 @@
             });
         }
 
-        // Initialize login UI on page load
-        updateLoginUI();
+        // Initialize splash then login/session gate UI (must be visible at least 3 seconds)
+        function initSplashThenLoginUI() {
+            var splashEl = document.getElementById('splashScreen');
+            if (!splashEl) {
+                updateLoginUI();
+                return;
+            }
+
+            var barEl = document.getElementById('splashLoadingBar');
+            var textEl = document.getElementById('splashLoadingText');
+            var durationMs = 3000;
+            var start = Date.now();
+
+            function frame() {
+                var elapsed = Date.now() - start;
+                var pct = Math.min(100, Math.floor((elapsed / durationMs) * 100));
+                if (barEl) barEl.style.width = pct + '%';
+                if (textEl) textEl.textContent = 'Loading... ' + pct + '%';
+                if (elapsed < durationMs) {
+                    requestAnimationFrame(frame);
+                }
+            }
+
+            requestAnimationFrame(frame);
+
+            setTimeout(function() {
+                if (splashEl) {
+                    splashEl.classList.add('fade-out');
+                    setTimeout(function() {
+                        if (splashEl && splashEl.parentNode) {
+                            splashEl.parentNode.removeChild(splashEl);
+                        }
+                        updateLoginUI();
+                    }, 400);
+                } else {
+                    updateLoginUI();
+                }
+            }, durationMs);
+        }
+
+        initSplashThenLoginUI();
 
         // Activity Type Management
         let entryTypeData = [];
@@ -3523,7 +3665,7 @@
                         </div>
                         <div class="number-control">
                             <button class="number-btn" data-action="decrease" data-entry-id="${index}" data-details="${escapeHtml(entry.details)}">-</button>
-                            <span class="number-display" id="count-${index}" data-entry-id="${index}" data-details="${escapeHtml(entry.details)}" contenteditable="false">${quantity}</span>
+                            <span class="number-display" id="count-${index}" data-entry-id="${index}" data-details="${escapeHtml(entry.details)}" contenteditable="false" inputmode="numeric" pattern="[0-9]*" spellcheck="false" autocomplete="off" aria-label="Quantity">${quantity}</span>
                             <button class="number-btn" data-action="increase" data-entry-id="${index}" data-details="${escapeHtml(entry.details)}">+</button>
                         </div>
                     </div>
@@ -3557,9 +3699,17 @@
 
                     display.addEventListener('keydown', function(e) {
                         const hasTyped = this.getAttribute('data-has-typed') === 'true';
-                        
+                        const isDigit = /^[0-9]$/.test(e.key);
+
+                        // Prevent non-numeric single-character input when editing quantity.
+                        // This helps ensure we don't accept letters even if a character keyboard appears.
+                        if (!isDigit && e.key && e.key.length === 1) {
+                            e.preventDefault();
+                            return;
+                        }
+
                         // If user starts typing a number and hasn't typed yet, clear and replace
-                        if (!hasTyped && /^[0-9]$/.test(e.key)) {
+                        if (!hasTyped && isDigit) {
                             e.preventDefault();
                             this.setAttribute('data-has-typed', 'true');
                             this.textContent = e.key;
@@ -3581,8 +3731,8 @@
                             this.textContent = currentValue;
                             this.setAttribute('data-has-typed', 'false');
                             this.blur();
-                        } else if (!hasTyped && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) {
-                            // Mark as typed if user presses any character, backspace, or delete
+                        } else if (!hasTyped && (e.key === 'Backspace' || e.key === 'Delete')) {
+                            // Mark as typed if user presses backspace/delete
                             this.setAttribute('data-has-typed', 'true');
                         }
                     });
@@ -3641,6 +3791,9 @@
         function enableQuantityEdit(displayElement) {
             const currentValue = pricingQuantities[displayElement.getAttribute('data-details')] || 0;
             displayElement.setAttribute('contenteditable', 'true');
+            displayElement.setAttribute('inputmode', 'numeric');
+            displayElement.setAttribute('autocomplete', 'off');
+            displayElement.setAttribute('spellcheck', 'false');
             displayElement.classList.add('editing');
             displayElement.textContent = currentValue;
             displayElement.setAttribute('data-has-typed', 'false');
@@ -3836,6 +3989,32 @@
                     addressData = JSON.parse(savedAddresses);
                     // Ensure all addresses are capitalized
                     addressData = addressData.map(addr => capitalizeAddress(addr));
+
+                    // Remove legacy default addresses (keeps the list clean)
+                    const legacyDefaultsLower = new Set([
+                        '123 main street, manila',
+                        '456 oak avenue, quezon city',
+                        '789 pine road, makati',
+                        '321 elm street, pasig',
+                        '654 maple drive, mandaluyong'
+                    ]);
+                    addressData = addressData.filter(function(addr) {
+                        return !legacyDefaultsLower.has(String(addr || '').toLowerCase().trim());
+                    });
+
+                    // If the saved list becomes empty, restore the allowed defaults
+                    if (!addressData || addressData.length === 0) {
+                        addressData = [
+                            'Gensan',
+                            'Polomolok',
+                            'Tupi',
+                            'Koronadal City',
+                            'Lake Sebu',
+                            'Davao',
+                            'Manila'
+                        ];
+                    }
+
                     saveAddressesToLocalStorage();
                 } else {
                     // Initialize with some sample addresses if none exist (already capitalized)
