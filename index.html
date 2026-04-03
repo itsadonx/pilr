@@ -3374,31 +3374,89 @@
             }
 
             if (!licenseKnownForDevice && !licenseChecking) {
-                // Start async license check once
-                licenseChecking = true;
-                if (sessionGateHintTextEl) {
-                    sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
+                // If we have a still-valid cached license expiry, allow immediately (offline-friendly),
+                // and optionally re-check in background if online.
+                let cachedOkUntil = null;
+                try {
+                    cachedOkUntil = localStorage.getItem(LICENSE_CACHE_OK_UNTIL_KEY) || null;
+                } catch (e) {}
+
+                function isOkUntilIso(expiresAtIso) {
+                    if (!expiresAtIso) return false;
+                    try {
+                        return Date.now() < new Date(expiresAtIso).getTime();
+                    } catch (e) {
+                        return false;
+                    }
                 }
-                checkDeviceLicense().then(function(ok) {
-                    licenseOkForDevice = ok;
+
+                if (cachedOkUntil && isOkUntilIso(cachedOkUntil)) {
+                    licenseOkForDevice = true;
                     licenseKnownForDevice = true;
                     licenseDeviceNumber = deviceNum;
-                    licenseChecking = false;
-                    applySessionGate();
-                }).catch(function() {
-                    licenseOkForDevice = false;
-                    licenseKnownForDevice = true;
-                    licenseDeviceNumber = deviceNum;
-                    licenseChecking = false;
-                    applySessionGate();
-                });
+
+                    // Background refresh when online; don't lock UI since cached license is valid.
+                    let isOnline = true;
+                    try {
+                        isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') ? navigator.onLine : true;
+                    } catch (e) {
+                        isOnline = true;
+                    }
+
+                    if (isOnline) {
+                        licenseChecking = true;
+                        if (sessionGateHintTextEl) {
+                            sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
+                        }
+                        checkDeviceLicense().then(function(ok) {
+                            licenseOkForDevice = ok;
+                            licenseKnownForDevice = true;
+                            licenseDeviceNumber = deviceNum;
+                            licenseChecking = false;
+                            applySessionGate();
+                        }).catch(function() {
+                            licenseOkForDevice = false;
+                            licenseKnownForDevice = true;
+                            licenseDeviceNumber = deviceNum;
+                            licenseChecking = false;
+                            applySessionGate();
+                        });
+                    }
+                } else {
+                    // Start async license check once (no valid cache)
+                    licenseChecking = true;
+                    if (sessionGateHintTextEl) {
+                        sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
+                    }
+                    checkDeviceLicense().then(function(ok) {
+                        licenseOkForDevice = ok;
+                        licenseKnownForDevice = true;
+                        licenseDeviceNumber = deviceNum;
+                        licenseChecking = false;
+                        applySessionGate();
+                    }).catch(function() {
+                        licenseOkForDevice = false;
+                        licenseKnownForDevice = true;
+                        licenseDeviceNumber = deviceNum;
+                        licenseChecking = false;
+                        applySessionGate();
+                    });
+                }
             }
 
             if (licenseChecking) {
-                sessionGateEl.classList.add('active');
-                sessionGateEl.setAttribute('aria-hidden', 'false');
-                document.body.classList.add('session-locked');
-                return;
+                // If cached license is already valid, don't lock the UI while refreshing.
+                if (licenseOkForDevice) {
+                    sessionGateEl.classList.remove('active');
+                    sessionGateEl.setAttribute('aria-hidden', 'true');
+                    document.body.classList.remove('session-locked');
+                    return;
+                } else {
+                    sessionGateEl.classList.add('active');
+                    sessionGateEl.setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('session-locked');
+                    return;
+                }
             }
 
             if (licenseOkForDevice) {
