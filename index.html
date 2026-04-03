@@ -2477,10 +2477,6 @@
                             <span class="receipt-detail-label">Address:</span>
                             <span class="receipt-detail-value" id="receiptAddress"></span>
                         </div>
-                        <div class="receipt-detail-row">
-                            <span class="receipt-detail-label">User Type:</span>
-                            <span class="receipt-detail-value" id="receiptUserType"></span>
-                        </div>
                         <div class="receipt-detail-row" id="receiptCreatedByRow" style="display: none;">
                             <span class="receipt-detail-label">Created By:</span>
                             <span class="receipt-detail-value" id="receiptCreatedBy"></span>
@@ -4337,12 +4333,15 @@
             document.getElementById('receiptEntryType').textContent = entryType || 'N/A';
             document.getElementById('receiptPlateNo').textContent = plateNo;
             document.getElementById('receiptAddress').textContent = address || '';
-            document.getElementById('receiptUserType').textContent = '';
+            const receiptUserTypeEl = document.getElementById('receiptUserType');
+            if (receiptUserTypeEl) {
+                receiptUserTypeEl.textContent = '';
+            }
 
             // Top address line on the receipt should match the selected Address (city list)
             const receiptTopAddressEl = document.getElementById('receiptTopAddress');
             if (receiptTopAddressEl) {
-                receiptTopAddressEl.textContent = address || '';
+                receiptTopAddressEl.textContent = 'Sitio Tuko-Fol, Lake Sebu, South Cotabato';
             }
             
             // Set Created By field
@@ -4394,7 +4393,10 @@
                     entryType: document.getElementById('receiptEntryType').textContent,
                     address: document.getElementById('receiptAddress').textContent,
                     plateNo: document.getElementById('receiptPlateNo').textContent,
-                    userType: document.getElementById('receiptUserType').textContent,
+                    userType: (function() {
+                        const el = document.getElementById('receiptUserType');
+                        return el ? el.textContent : '';
+                    })(),
                     copyType: copyType, // 'cashier' or 'customer'
                     copyLabel: copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY',
                     totalPax: parseInt(document.getElementById('receiptTotalPax').textContent.replace(' Pax', '')) || 0,
@@ -6072,12 +6074,15 @@
                 document.getElementById('receiptEntryType').textContent = receipt.entryType || 'N/A';
                 document.getElementById('receiptPlateNo').textContent = receipt.plateNo || 'N/A';
                 document.getElementById('receiptAddress').textContent = receipt.address || '';
-                document.getElementById('receiptUserType').textContent = receipt.userType || '';
+                const receiptUserTypeEl = document.getElementById('receiptUserType');
+                if (receiptUserTypeEl) {
+                    receiptUserTypeEl.textContent = receipt.userType || '';
+                }
 
                 // Top address line
                 const receiptTopAddressEl = document.getElementById('receiptTopAddress');
                 if (receiptTopAddressEl) {
-                    receiptTopAddressEl.textContent = receipt.address || '';
+                    receiptTopAddressEl.textContent = 'Sitio Tuko-Fol, Lake Sebu, South Cotabato';
                 }
                 
                 // Set Created By field
