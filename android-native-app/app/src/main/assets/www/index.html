@@ -1079,6 +1079,11 @@
             z-index: 4300;
         }
 
+        /* Device number gate should sit above other modals */
+        #deviceNumberGateModal {
+            z-index: 4400;
+        }
+
         .modal-overlay.active {
             display: flex;
         }
@@ -2283,6 +2288,34 @@
     </div>
 
     <!-- Login Modal -->
+    <div class="modal-overlay" id="deviceNumberGateModal" role="dialog" aria-modal="true" aria-labelledby="deviceNumberGateTitle" aria-hidden="true">
+        <div class="modal" style="max-width: 420px;">
+            <div class="modal-header">
+                <span id="deviceNumberGateTitle">Set Device Number</span>
+                <button class="modal-close" id="closeDeviceNumberGate">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="deviceNumberGateMessage" style="color: #c0392b; font-size: 13px; line-height: 1.5; margin-bottom: 14px; display: none;"></div>
+                <div class="form-group">
+                    <label for="deviceNumberGateInput">Device number (1–999)</label>
+                    <input type="number" id="deviceNumberGateInput" min="1" max="999" step="1" placeholder="1" style="max-width: 220px;">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="add-btn" id="saveDeviceNumberGateBtn" style="flex: 1; background-color: #3498db;">
+                        Save & Check Access
+                    </button>
+                    <button class="add-btn" id="cancelDeviceNumberGateBtn" style="flex: 1; background-color: #95a5a6;">
+                        Cancel
+                    </button>
+                </div>
+                <div id="deviceNumberGateHint" style="color: #7f8c8d; font-size: 12px; margin-top: 12px; display: none;">
+                    Each physical device can claim up to <strong>3</strong> different device numbers.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
     <div class="modal-overlay" id="loginModal">
         <div class="modal" style="max-width: 400px;">
             <div class="modal-header">
@@ -2840,6 +2873,134 @@
             return 1;
         }
 
+        function getDeviceNumberConfigured() {
+            try {
+                const v = localStorage.getItem(DEVICE_NUMBER_KEY);
+                if (v === null || v === undefined) return null;
+                const n = parseInt(v, 10);
+                if (!isNaN(n) && n >= 1 && n <= 999) {
+                    return n;
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        function isAndroidNativeApp() {
+            // Capacitor + Android WebView should satisfy one of these.
+            try {
+                const ua = (navigator && navigator.userAgent) ? navigator.userAgent : '';
+                return /Android/i.test(ua);
+            } catch (e) {
+                return false;
+            }
+        }
+
+        const deviceNumberGateModal = document.getElementById('deviceNumberGateModal');
+        const closeDeviceNumberGateBtn = document.getElementById('closeDeviceNumberGate');
+        const saveDeviceNumberGateBtn = document.getElementById('saveDeviceNumberGateBtn');
+        const cancelDeviceNumberGateBtn = document.getElementById('cancelDeviceNumberGateBtn');
+        const deviceNumberGateInput = document.getElementById('deviceNumberGateInput');
+        const deviceNumberGateMessage = document.getElementById('deviceNumberGateMessage');
+        const deviceNumberGateHint = document.getElementById('deviceNumberGateHint');
+
+        function autoCloseApp() {
+            try {
+                if (window.Capacitor && window.Capacitor.App && typeof window.Capacitor.App.exitApp === 'function') {
+                    window.Capacitor.App.exitApp();
+                    return;
+                }
+            } catch (e) {}
+            try { window.close(); } catch (e) {}
+        }
+
+        let deviceNumberGateReason = null;
+
+        function openDeviceNumberGate(reason) {
+            if (!deviceNumberGateModal) return;
+            deviceNumberGateReason = reason || 'unset';
+
+            const current = getDeviceNumberConfigured();
+            if (deviceNumberGateInput) {
+                deviceNumberGateInput.value = String(current || 1);
+            }
+
+            if (deviceNumberGateMessage) {
+                let msg = 'Set your device number to claim access.';
+                if (deviceNumberGateReason === 'conflict') {
+                    msg = 'This device number is already used by another device. Choose a different device number to continue.';
+                } else if (deviceNumberGateReason === 'expired') {
+                    msg = 'Your trial/pro access for this device number is expired. Set a device number to try a new trial (limited to 3 numbers per device).';
+                } else if (deviceNumberGateReason === 'unset') {
+                    msg = 'Device number is not set yet. Set it to continue (defaults to 1).';
+                } else if (deviceNumberGateReason === 'limit') {
+                    msg = 'Device number limit exceeded for this device.';
+                }
+                deviceNumberGateMessage.textContent = msg;
+                deviceNumberGateMessage.style.display = 'block';
+            }
+
+            if (deviceNumberGateHint) {
+                deviceNumberGateHint.style.display = (deviceNumberGateReason !== 'limit') ? 'block' : 'none';
+            }
+
+            deviceNumberGateModal.classList.add('active');
+            deviceNumberGateModal.setAttribute('aria-hidden', 'false');
+            // Ensure sessionGate overlay doesn't cover the popup.
+            if (sessionGateEl) {
+                sessionGateEl.classList.remove('active');
+                sessionGateEl.setAttribute('aria-hidden', 'true');
+            }
+        }
+
+        function closeDeviceNumberGate() {
+            deviceNumberGateReason = null;
+            if (!deviceNumberGateModal) return;
+            deviceNumberGateModal.classList.remove('active');
+            deviceNumberGateModal.setAttribute('aria-hidden', 'true');
+        }
+
+        if (closeDeviceNumberGateBtn) {
+            closeDeviceNumberGateBtn.addEventListener('click', function() {
+                closeDeviceNumberGate();
+                // Restore license lock if still not ok
+                if (licenseOkForDevice === false && sessionGateEl && getCurrentUser()) {
+                    sessionGateEl.classList.add('active');
+                    sessionGateEl.setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('session-locked');
+                }
+            });
+        }
+
+        if (cancelDeviceNumberGateBtn) {
+            cancelDeviceNumberGateBtn.addEventListener('click', closeDeviceNumberGate);
+        }
+
+        if (saveDeviceNumberGateBtn) {
+            saveDeviceNumberGateBtn.addEventListener('click', function() {
+                if (!deviceNumberGateInput) return;
+                let n = parseInt(deviceNumberGateInput.value, 10);
+                if (isNaN(n) || n < 1) n = 1;
+                if (n > 999) n = 999;
+                localStorage.setItem(DEVICE_NUMBER_KEY, String(n));
+                deviceNumberGateInput.value = String(n);
+
+                // Update the on-screen reference number immediately.
+                const refEl = document.getElementById('refNumber');
+                if (refEl) {
+                    refEl.textContent = generateRefNumber();
+                }
+
+                // Reset license state and re-check.
+                licenseKnownForDevice = false;
+                licenseOkForDevice = false;
+                licenseChecking = false;
+                licenseDeviceNumber = null;
+
+                closeDeviceNumberGate();
+                applySessionGate();
+            });
+        }
+
         function loadDeviceNumberIntoSettings() {
             const input = document.getElementById('deviceNumberInput');
             if (input) {
@@ -3373,6 +3534,11 @@
                 licenseOkForDevice = false;
             }
 
+            // On Android: if device number is not set yet, show the gate immediately.
+            if (isAndroidNativeApp() && getDeviceNumberConfigured() === null) {
+                openDeviceNumberGate('unset');
+            }
+
             if (!licenseKnownForDevice && !licenseChecking) {
                 // If we have a still-valid cached license expiry, allow immediately (offline-friendly),
                 // and optionally re-check in background if online.
@@ -3416,17 +3582,31 @@
                         if (sessionGateHintTextEl) {
                             sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
                         }
-                        checkDeviceLicense().then(function(ok) {
+                        checkDeviceLicense().then(function(res) {
+                            const ok = !!(res && res.ok);
+                            const reason = res && res.reason ? res.reason : null;
                             licenseOkForDevice = ok;
                             licenseKnownForDevice = true;
                             licenseDeviceNumber = deviceNum;
                             licenseChecking = false;
+                            if (!ok) {
+                                if (reason === 'limit') {
+                                    autoCloseApp();
+                                    return;
+                                }
+                                if (isAndroidNativeApp()) {
+                                    openDeviceNumberGate(reason || 'expired');
+                                }
+                            } else {
+                                closeDeviceNumberGate();
+                            }
                             applySessionGate();
                         }).catch(function() {
                             licenseOkForDevice = false;
                             licenseKnownForDevice = true;
                             licenseDeviceNumber = deviceNum;
                             licenseChecking = false;
+                            if (isAndroidNativeApp()) openDeviceNumberGate('expired');
                             applySessionGate();
                         });
                     }
@@ -3436,23 +3616,42 @@
                     if (sessionGateHintTextEl) {
                         sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
                     }
-                    checkDeviceLicense().then(function(ok) {
+                    checkDeviceLicense().then(function(res) {
+                        const ok = !!(res && res.ok);
+                        const reason = res && res.reason ? res.reason : null;
                         licenseOkForDevice = ok;
                         licenseKnownForDevice = true;
                         licenseDeviceNumber = deviceNum;
                         licenseChecking = false;
+                        if (!ok) {
+                            if (reason === 'limit') {
+                                autoCloseApp();
+                                return;
+                            }
+                            if (isAndroidNativeApp()) {
+                                openDeviceNumberGate(reason || 'expired');
+                            }
+                        } else {
+                            closeDeviceNumberGate();
+                        }
                         applySessionGate();
                     }).catch(function() {
                         licenseOkForDevice = false;
                         licenseKnownForDevice = true;
                         licenseDeviceNumber = deviceNum;
                         licenseChecking = false;
+                        if (isAndroidNativeApp()) openDeviceNumberGate('expired');
                         applySessionGate();
                     });
                 }
             }
 
             if (licenseChecking) {
+                const deviceGateActive = !!(deviceNumberGateModal && deviceNumberGateModal.classList && deviceNumberGateModal.classList.contains('active'));
+                if (deviceGateActive) {
+                    // Device number gate popup is already blocking the UI.
+                    return;
+                }
                 // If cached license is already valid, don't lock the UI while refreshing.
                 if (licenseOkForDevice) {
                     sessionGateEl.classList.remove('active');
@@ -3472,6 +3671,11 @@
                 sessionGateEl.setAttribute('aria-hidden', 'true');
                 document.body.classList.remove('session-locked');
             } else {
+                const deviceGateActive = !!(deviceNumberGateModal && deviceNumberGateModal.classList && deviceNumberGateModal.classList.contains('active'));
+                if (deviceGateActive) {
+                    // Don't show login overlay behind the device number popup.
+                    return;
+                }
                 sessionGateEl.classList.add('active');
                 sessionGateEl.setAttribute('aria-hidden', 'false');
                 document.body.classList.add('session-locked');
@@ -3516,7 +3720,8 @@
         }
 
         async function checkDeviceLicense() {
-            const deviceNum = getDeviceNumber();
+            const configuredDeviceNum = getDeviceNumberConfigured();
+            const deviceNum = configuredDeviceNum || 1;
 
             const DEVICE_ID_KEY = 'entrancePassDeviceId';
             const DEVICE_REGISTRY_NODE_KEY = 'deviceRegistry';
@@ -3548,12 +3753,29 @@
             })();
 
             async function ensureDeviceRegisteredOnFirebase() {
-                // Returns true if allowed, false if a different device already owns this device number.
+                // Returns {ok:true} if allowed, or {ok:false, reason:'conflict'|'limit'}.
                 const registryRef = db.ref(DEVICE_REGISTRY_NODE_KEY + '/' + String(deviceNum));
                 const record = await getFirebaseValue(registryRef);
 
                 const nowIso = new Date().toISOString();
                 if (!record) {
+                    // Enforce "max 3 device numbers per physical deviceId"
+                    const registrySnap = await db.ref(DEVICE_REGISTRY_NODE_KEY).once('value');
+                    const registryVal = (registrySnap && typeof registrySnap.val === 'function') ? (registrySnap.val() || {}) : {};
+                    const deviceNumbersUsed = new Set();
+                    try {
+                        Object.keys(registryVal || {}).forEach(function(numKey) {
+                            const r = registryVal[numKey];
+                            if (r && r.deviceId === localDeviceId) deviceNumbersUsed.add(numKey);
+                        });
+                    } catch (e) {}
+
+                    if (deviceNumbersUsed.size >= 3) {
+                        // Don't register a new device number; limit exceeded.
+                        try { localStorage.setItem(registryOkCacheKey, 'false'); } catch (e) {}
+                        return { ok: false, reason: 'limit' };
+                    }
+
                     // Create registry entry for this device number
                     await registryRef.set({
                         deviceId: localDeviceId,
@@ -3565,7 +3787,7 @@
                         localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), localDeviceId);
                         localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
                     } catch (e) {}
-                    return true;
+                    return { ok: true };
                 }
 
                 const existingDeviceId = record.deviceId;
@@ -3576,7 +3798,7 @@
                         localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), existingDeviceId);
                         localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
                     } catch (e) {}
-                    return false;
+                    return { ok: false, reason: 'conflict' };
                 }
 
                 // Same device (or registry didn't have a deviceId yet) -> update lastSeen
@@ -3590,7 +3812,7 @@
                     localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), localDeviceId);
                     localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
                 } catch (e) {}
-                return true;
+                return { ok: true };
             }
 
             function isOkUntilIso(expiresAtIso) {
@@ -3655,9 +3877,9 @@
                 if (firebaseReady) {
                     try {
                         // Ensure this device number isn't being reused by another device
-                        const okRegistry = await ensureDeviceRegisteredOnFirebase();
-                        if (!okRegistry) {
-                            return false;
+                        const regResult = await ensureDeviceRegisteredOnFirebase();
+                        if (!regResult.ok) {
+                            return regResult; // conflict/limit
                         }
 
                         const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
@@ -3666,7 +3888,7 @@
                         // No record => local trial (and optionally write back to Firebase when online)
                         if (!license) {
                             const trialStartIso = getTrialStartIsoForDevice();
-                            if (!trialStartIso) return false;
+                            if (!trialStartIso) return { ok: false, reason: 'expired' };
 
                             const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
                             const ok = isOkUntilIso(trialExpiresAtIso);
@@ -3691,7 +3913,7 @@
                                 await licenseRef.set(trialRecord);
                             } catch (e) {}
 
-                            return ok;
+                            return { ok: ok, reason: ok ? null : 'expired' };
                         }
 
                         // Compute expiry
@@ -3704,7 +3926,7 @@
                             expiresAtIso = new Date(new Date(license.grantedAt).getTime() + license.durationMs).toISOString();
                         }
 
-                        if (!expiresAtIso) return false;
+                        if (!expiresAtIso) return { ok: false, reason: 'expired' };
 
                 const ok = isOkUntilIso(expiresAtIso);
                         try {
@@ -3717,7 +3939,7 @@
                             }));
                         } catch (e) {}
 
-                        return ok;
+                        return { ok: ok, reason: ok ? null : 'expired' };
                     } catch (e) {
                         console.warn('License fetch failed (will fall back to cache/trial if available):', e);
                     }
@@ -3726,11 +3948,11 @@
 
             // 3) No internet, or Firebase failed => fall back to cached expiry, then local trial window
             if (cachedOkUntil && isOkUntilIso(cachedOkUntil) && cacheMatchesDevice) {
-                return true;
+                return { ok: true, reason: null };
             }
 
             const trialStartIso = getTrialStartIsoForDevice();
-            if (!trialStartIso) return false;
+            if (!trialStartIso) return { ok: false, reason: 'expired' };
             const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
             const ok = isOkUntilIso(trialExpiresAtIso);
 
@@ -3744,7 +3966,7 @@
                 }));
             } catch (e) {}
 
-            return ok;
+            return { ok: ok, reason: ok ? null : 'expired' };
         }
 
         // Master key or Settings user password
