@@ -1002,6 +1002,15 @@
             align-items: center;
         }
 
+        /* Ensure cancel popups appear above the History modal */
+        #cancelChoiceModal {
+            z-index: 4200;
+        }
+
+        #cancelPasswordModal {
+            z-index: 4300;
+        }
+
         .modal-overlay.active {
             display: flex;
         }
@@ -6305,6 +6314,19 @@
             requestCancelBtn.addEventListener('click', function() {
                 closeCancelChoiceModal();
                 if (pendingCancelReceiptId) {
+                    try {
+                        const currentUser = getCurrentUser();
+                        // Master key can cancel immediately without re-entering password.
+                        if (currentUser && currentUser.isMasterKey) {
+                            if (cancelPasswordInput) {
+                                cancelPasswordInput.value = MASTER_KEY_PASSWORD;
+                            }
+                            cancelNowWithPassword();
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('Master key cancel check failed:', e);
+                    }
                     submitCancellationRequest(pendingCancelReceiptId);
                 }
             });
