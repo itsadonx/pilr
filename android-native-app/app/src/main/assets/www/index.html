@@ -1792,7 +1792,7 @@
             <div class="gate-brand-app">Entrance Pass</div>
 
             <h1 id="sessionGateTitle">Sign in</h1>
-            <p class="session-gate-hint">Use the <strong>master key</strong>, or the password for an account created in <strong>Settings → User</strong>.</p>
+            <p class="session-gate-hint" id="sessionGateHintText">Use the <strong>master key</strong>, or the password for an account created in <strong>Settings → User</strong>.</p>
 
             <div class="form-group">
                 <label for="gate-password">Password</label>
@@ -3145,9 +3145,20 @@
         const MASTER_KEY_PASSWORD = 'Itpilr2026';
 
         const sessionGateEl = document.getElementById('sessionGate');
+        const sessionGateHintTextEl = document.getElementById('sessionGateHintText');
         const gatePasswordInput = document.getElementById('gate-password');
         const gateErrorEl = document.getElementById('gateError');
         const gateLoginBtn = document.getElementById('gateLoginBtn');
+
+        // License gate state (trial/pro managed in Firebase per device number)
+        let licenseChecking = false;
+        let licenseKnownForDevice = false;
+        let licenseOkForDevice = false;
+        let licenseDeviceNumber = null;
+
+        const LICENSE_NODE_KEY = 'deviceLicenses';
+        const TRIAL_START_KEY = 'entrancePassTrialStartAt';
+        const LICENSE_CACHE_OK_UNTIL_KEY = 'entrancePassLicenseOkUntil';
 
         // Get current logged in user
         function getCurrentUser() {
@@ -3168,6 +3179,16 @@
                 } else {
                     localStorage.removeItem('currentUser');
                 }
+                // Reset license state when logging out
+                if (!user) {
+                    licenseChecking = false;
+                    licenseKnownForDevice = false;
+                    licenseOkForDevice = false;
+                    licenseDeviceNumber = null;
+                    if (sessionGateHintTextEl) {
+                        sessionGateHintTextEl.textContent = 'Use the master key, or the password for an account created in Settings → User.';
+                    }
+                }
                 updateLoginUI();
             } catch (e) {
                 console.error('Error setting current user:', e);
@@ -3175,15 +3196,16 @@
         }
 
         function applySessionGate() {
-            const authed = !!getCurrentUser();
             if (!sessionGateEl) {
                 return;
             }
-            if (authed) {
-                sessionGateEl.classList.remove('active');
-                sessionGateEl.setAttribute('aria-hidden', 'true');
-                document.body.classList.remove('session-locked');
-            } else {
+
+            const currentUser = getCurrentUser();
+            const authed = !!currentUser;
+            const isMaster = !!(currentUser && currentUser.isMasterKey);
+
+            if (!authed) {
+                // Not signed in: show gate for password input
                 sessionGateEl.classList.add('active');
                 sessionGateEl.setAttribute('aria-hidden', 'false');
                 document.body.classList.add('session-locked');
@@ -3194,11 +3216,187 @@
                     gateErrorEl.style.display = 'none';
                     gateErrorEl.textContent = '';
                 }
+                if (sessionGateHintTextEl) {
+                    sessionGateHintTextEl.textContent = 'Use the master key, or the password for an account created in Settings → User.';
+                }
                 setTimeout(function() {
                     if (gatePasswordInput) {
                         gatePasswordInput.focus();
                     }
                 }, 100);
+                return;
+            }
+
+            // Signed in as master: always allow
+            if (isMaster) {
+                licenseChecking = false;
+                licenseKnownForDevice = true;
+                licenseOkForDevice = true;
+                licenseDeviceNumber = getDeviceNumber();
+                sessionGateEl.classList.remove('active');
+                sessionGateEl.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('session-locked');
+                return;
+            }
+
+            // Non-master: enforce device license (trial/pro)
+            const deviceNum = getDeviceNumber();
+            if (licenseDeviceNumber !== deviceNum) {
+                licenseKnownForDevice = false;
+                licenseOkForDevice = false;
+            }
+
+            if (!licenseKnownForDevice && !licenseChecking) {
+                // Start async license check once
+                licenseChecking = true;
+                if (sessionGateHintTextEl) {
+                    sessionGateHintTextEl.textContent = 'Checking your trial/pro access...';
+                }
+                checkDeviceLicense().then(function(ok) {
+                    licenseOkForDevice = ok;
+                    licenseKnownForDevice = true;
+                    licenseDeviceNumber = deviceNum;
+                    licenseChecking = false;
+                    applySessionGate();
+                }).catch(function() {
+                    licenseOkForDevice = false;
+                    licenseKnownForDevice = true;
+                    licenseDeviceNumber = deviceNum;
+                    licenseChecking = false;
+                    applySessionGate();
+                });
+            }
+
+            if (licenseChecking) {
+                sessionGateEl.classList.add('active');
+                sessionGateEl.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('session-locked');
+                return;
+            }
+
+            if (licenseOkForDevice) {
+                sessionGateEl.classList.remove('active');
+                sessionGateEl.setAttribute('aria-hidden', 'true');
+                document.body.classList.remove('session-locked');
+            } else {
+                sessionGateEl.classList.add('active');
+                sessionGateEl.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('session-locked');
+                if (sessionGateHintTextEl) {
+                    sessionGateHintTextEl.textContent = 'Your trial/pro access has expired. Contact admin to renew.';
+                }
+                if (gatePasswordInput) {
+                    gatePasswordInput.value = '';
+                }
+            }
+        }
+
+        function addDurationToDate(startIso, duration) {
+            const d = new Date(startIso);
+            const years = Number(duration && duration.years) || 0;
+            const months = Number(duration && duration.months) || 0;
+            const weeks = Number(duration && duration.weeks) || 0;
+            const days = Number(duration && duration.days) || 0;
+            const hours = Number(duration && duration.hours) || 0;
+
+            if (isNaN(d.getTime())) return new Date(startIso);
+            if (years) d.setFullYear(d.getFullYear() + years);
+            if (months) d.setMonth(d.getMonth() + months);
+            const extraDays = (weeks * 7) + days;
+            if (extraDays) d.setDate(d.getDate() + extraDays);
+            if (hours) d.setTime(d.getTime() + (hours * 60 * 60 * 1000));
+            return d;
+        }
+
+        function getFirebaseValue(ref) {
+            return new Promise(function(resolve, reject) {
+                try {
+                    ref.once('value', function(snapshot) {
+                        resolve(snapshot.val());
+                    }, function(err) {
+                        reject(err);
+                    });
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
+        async function checkDeviceLicense() {
+            const deviceNum = getDeviceNumber();
+            try {
+                // Master key is already handled outside
+                if (!initializeFirebase()) {
+                    return false;
+                }
+                if (!db) return false;
+
+                const licenseRef = db.ref(LICENSE_NODE_KEY + '/' + deviceNum);
+                const license = await getFirebaseValue(licenseRef);
+
+                // If no record exists, start a 30-day trial for this device
+                if (!license) {
+                    let trialStartIso = null;
+                    try {
+                        trialStartIso = localStorage.getItem(TRIAL_START_KEY);
+                    } catch (e) {
+                        trialStartIso = null;
+                    }
+                    if (!trialStartIso) {
+                        trialStartIso = new Date().toISOString();
+                        try {
+                            localStorage.setItem(TRIAL_START_KEY, trialStartIso);
+                        } catch (e) {}
+                    }
+
+                    const trialExpiresAtIso = new Date(new Date(trialStartIso).getTime() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+                    const trialRecord = {
+                        plan: 'trial',
+                        grantedAt: trialStartIso,
+                        expiresAt: trialExpiresAtIso
+                    };
+
+                    try {
+                        await licenseRef.set(trialRecord);
+                    } catch (e) {
+                        // Even if write fails, we can still allow locally for the trial window.
+                    }
+
+                    const ok = Date.now() < new Date(trialExpiresAtIso).getTime();
+                    try {
+                        localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, trialExpiresAtIso);
+                    } catch (e) {}
+                    return ok;
+                }
+
+                // Compute expiry
+                let expiresAtIso = null;
+                if (license.expiresAt) {
+                    expiresAtIso = license.expiresAt;
+                } else if (license.grantedAt && license.duration) {
+                    expiresAtIso = addDurationToDate(license.grantedAt, license.duration).toISOString();
+                } else if (license.grantedAt && typeof license.durationMs === 'number') {
+                    expiresAtIso = new Date(new Date(license.grantedAt).getTime() + license.durationMs).toISOString();
+                }
+
+                if (!expiresAtIso) {
+                    return false;
+                }
+
+                const ok = Date.now() < new Date(expiresAtIso).getTime();
+                try {
+                    localStorage.setItem(LICENSE_CACHE_OK_UNTIL_KEY, expiresAtIso);
+                } catch (e) {}
+                return ok;
+            } catch (e) {
+                console.error('License check failed:', e);
+
+                // Fallback to cached local expiry so the app can still work briefly offline.
+                try {
+                    const cached = localStorage.getItem(LICENSE_CACHE_OK_UNTIL_KEY);
+                    if (cached) return Date.now() < new Date(cached).getTime();
+                } catch (err) {}
+                return false;
             }
         }
 
