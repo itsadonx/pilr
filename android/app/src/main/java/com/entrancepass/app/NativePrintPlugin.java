@@ -18,11 +18,27 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * Prints HTML using Android {@link PrintManager} with a WebView attached to the activity.
- * Off-screen / application-context WebViews often produce blank print output on many devices.
+ * Fallback HTML print: WebView must stay alive while PrintDocumentAdapter runs; do not destroy
+ * immediately after {@link PrintManager#print}. Previous WebView is removed when the next print
+ * starts.
  */
 @CapacitorPlugin(name = "NativePrint")
 public class NativePrintPlugin extends Plugin {
+
+    private static WebView sPendingWebView;
+    private static ViewGroup sPendingParent;
+
+    private static void removePendingWebView() {
+        if (sPendingWebView != null && sPendingParent != null) {
+            try {
+                sPendingParent.removeView(sPendingWebView);
+                sPendingWebView.destroy();
+            } catch (Exception ignored) {
+            }
+            sPendingWebView = null;
+            sPendingParent = null;
+        }
+    }
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -45,6 +61,8 @@ public class NativePrintPlugin extends Plugin {
                 new Runnable() {
                     @Override
                     public void run() {
+                        removePendingWebView();
+
                         final WebView webView = new WebView(activity);
                         final WebSettings ws = webView.getSettings();
                         ws.setJavaScriptEnabled(false);
@@ -58,26 +76,10 @@ public class NativePrintPlugin extends Plugin {
                         final int match = ViewGroup.LayoutParams.MATCH_PARENT;
                         root.addView(webView, new ViewGroup.LayoutParams(match, match));
 
-                        final boolean[] started = { false };
+                        sPendingWebView = webView;
+                        sPendingParent = root;
 
-                        final Runnable cleanup =
-                                new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        mainHandler.postDelayed(
-                                                new Runnable() {
-                                                    @Override
-                                                    public void run() {
-                                                        try {
-                                                            root.removeView(webView);
-                                                            webView.destroy();
-                                                        } catch (Exception ignored) {
-                                                        }
-                                                    }
-                                                },
-                                                800);
-                                    }
-                                };
+                        final boolean[] started = { false };
 
                         webView.setWebViewClient(
                                 new WebViewClient() {
@@ -92,13 +94,29 @@ public class NativePrintPlugin extends Plugin {
                                                         }
                                                         started[0] = true;
                                                         try {
+                                                            int w =
+                                                                    View.MeasureSpec.makeMeasureSpec(
+                                                                            1080,
+                                                                            View.MeasureSpec.EXACTLY);
+                                                            int h =
+                                                                    View.MeasureSpec.makeMeasureSpec(
+                                                                            0,
+                                                                            View.MeasureSpec
+                                                                                    .UNSPECIFIED);
+                                                            webView.measure(w, h);
+                                                            webView.layout(
+                                                                    0,
+                                                                    0,
+                                                                    webView.getMeasuredWidth(),
+                                                                    webView.getMeasuredHeight());
+
                                                             PrintManager pm =
                                                                     (PrintManager)
                                                                             activity.getSystemService(
-                                                                                    Activity.PRINT_SERVICE);
+                                                                                    Activity
+                                                                                            .PRINT_SERVICE);
                                                             if (pm == null) {
                                                                 call.reject("PrintManager unavailable");
-                                                                cleanup.run();
                                                                 return;
                                                             }
                                                             String documentName = jobName + "_document";
@@ -117,12 +135,10 @@ public class NativePrintPlugin extends Plugin {
                                                                             ? e.getMessage()
                                                                             : "Print failed",
                                                                     e);
-                                                        } finally {
-                                                            cleanup.run();
                                                         }
                                                     }
                                                 },
-                                                500);
+                                                600);
                                     }
                                 });
 
