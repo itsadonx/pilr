@@ -2030,6 +2030,7 @@
                 <button class="tab-button" data-tab="entry-type">Activity Type</button>
                 <button class="tab-button" data-tab="visit-type">Type of Visit</button>
                 <button class="tab-button" data-tab="device">Device</button>
+                <button class="tab-button" data-tab="print">Print</button>
                 <button class="tab-button" data-tab="barcode">Barcode</button>
             </div>
             <div class="modal-body">
@@ -2152,6 +2153,30 @@
                     </div>
                     <button class="add-btn" id="saveDeviceNumberBtn" type="button" style="background-color: #3498db; max-width: 280px;">
                         Save device number
+                    </button>
+                </div>
+
+                <!-- Print Tab -->
+                <div class="tab-content" id="print-tab">
+                    <div class="table-header">
+                        <h3 style="margin: 0;">Print Settings</h3>
+                    </div>
+                    <p style="color: #7f8c8d; font-size: 13px; line-height: 1.5; margin: 12px 0 16px 0;">
+                        Choose how the app prints receipts and reports.
+                    </p>
+                    <div class="form-group">
+                        <label for="printModeSelect">Print mode</label>
+                        <select id="printModeSelect">
+                            <option value="dialog">Print Dialog</option>
+                            <option value="direct">Direct Print</option>
+                        </select>
+                    </div>
+                    <p style="color: #7f8c8d; font-size: 12px; line-height: 1.4; margin: 6px 0 14px 0;">
+                        - Print Dialog uses the current print flow (system print UI).<br>
+                        - Direct Print tries native direct print first, then falls back if needed.
+                    </p>
+                    <button class="add-btn" id="savePrintSettingsBtn" type="button" style="background-color: #3498db; max-width: 220px;">
+                        Save print settings
                     </button>
                 </div>
 
@@ -2901,6 +2926,7 @@
         const settingsTabContents = settingsModal.querySelectorAll('.tab-content');
 
         const DEVICE_NUMBER_KEY = 'entrancePassDeviceNumber';
+        const PRINT_MODE_KEY = 'entrancePassPrintMode';
 
         function getDeviceNumber() {
             try {
@@ -3050,6 +3076,28 @@
             }
         }
 
+        function getPrintMode() {
+            try {
+                const mode = localStorage.getItem(PRINT_MODE_KEY);
+                return (mode === 'direct') ? 'direct' : 'dialog';
+            } catch (e) {
+                return 'dialog';
+            }
+        }
+
+        function loadPrintSettingsIntoSettings() {
+            const select = document.getElementById('printModeSelect');
+            if (!select) return;
+            select.value = getPrintMode();
+        }
+
+        function savePrintSettingsFromSettings() {
+            const select = document.getElementById('printModeSelect');
+            const mode = (select && select.value === 'direct') ? 'direct' : 'dialog';
+            localStorage.setItem(PRINT_MODE_KEY, mode);
+            alert('Print settings saved: ' + (mode === 'direct' ? 'Direct Print' : 'Print Dialog'));
+        }
+
         function saveDeviceNumberFromSettings() {
             const input = document.getElementById('deviceNumberInput');
             let n = input ? parseInt(input.value, 10) : 1;
@@ -3073,6 +3121,7 @@
         function openSettingsModal() {
             settingsModal.classList.add('active');
             loadDeviceNumberIntoSettings();
+            loadPrintSettingsIntoSettings();
             // Reset to first tab when opening
             switchTab('pricing');
         }
@@ -3130,6 +3179,10 @@
         const saveDeviceNumberBtn = document.getElementById('saveDeviceNumberBtn');
         if (saveDeviceNumberBtn) {
             saveDeviceNumberBtn.addEventListener('click', saveDeviceNumberFromSettings);
+        }
+        const savePrintSettingsBtn = document.getElementById('savePrintSettingsBtn');
+        if (savePrintSettingsBtn) {
+            savePrintSettingsBtn.addEventListener('click', savePrintSettingsFromSettings);
         }
 
         // Close modal when clicking outside
@@ -5800,6 +5853,7 @@
         function printReceipt(copyType, options) {
             options = options || {};
             var skipSave = options.skipSave === true;
+            var printMode = getPrintMode(); // 'dialog' | 'direct'
 
             var copyLabel = copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY';
             document.getElementById('receiptCopyLabel').textContent = copyLabel;
@@ -5818,6 +5872,13 @@
 
             var htmlContent = buildReceiptHtmlDocument(receiptContent);
 
+            // Print Dialog mode: always use current iframe/web print flow.
+            if (printMode === 'dialog') {
+                printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
+                return;
+            }
+
+            // Direct mode below
             if (!hasAndroidPrintBridge() && !isCapacitorNativeApp()) {
                 printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
                 return;
@@ -6963,6 +7024,14 @@
                     '</body>' +
                     '</html>';
 
+                var printMode = getPrintMode(); // 'dialog' | 'direct'
+
+                if (printMode === 'dialog') {
+                    printHtmlInIframeOnly(htmlContent);
+                    return;
+                }
+
+                // Direct mode
                 if (!hasAndroidPrintBridge() && !isCapacitorNativeApp()) {
                     printHtmlInIframeOnly(htmlContent);
                     return;
