@@ -6314,19 +6314,6 @@
             requestCancelBtn.addEventListener('click', function() {
                 closeCancelChoiceModal();
                 if (pendingCancelReceiptId) {
-                    try {
-                        const currentUser = getCurrentUser();
-                        // Master key can cancel immediately without re-entering password.
-                        if (currentUser && currentUser.isMasterKey) {
-                            if (cancelPasswordInput) {
-                                cancelPasswordInput.value = MASTER_KEY_PASSWORD;
-                            }
-                            cancelNowWithPassword();
-                            return;
-                        }
-                    } catch (e) {
-                        console.warn('Master key cancel check failed:', e);
-                    }
                     submitCancellationRequest(pendingCancelReceiptId);
                 }
             });
