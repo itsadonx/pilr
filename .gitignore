@@ -9,3 +9,7 @@ android/local.properties
 .idea/
 *.iml
 .capacitor/
+android-native-app/.gradle/
+android-native-app/app/build/
+android-native-app/build/
+android-native-app/local.properties

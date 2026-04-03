@@ -5,6 +5,7 @@
   "description": "Android shell for Entrance Pass System (WebView + Capacitor)",
   "scripts": {
     "copy:www": "node -e \"require('fs').copyFileSync('index.html','www/index.html')\"",
+    "copy:native-android": "node -e \"const fs=require('fs');const p='android-native-app/app/src/main/assets/www';fs.mkdirSync(p,{recursive:true});fs.copyFileSync('index.html',p+'/index.html')\"",
     "sync": "npm run copy:www && cap sync",
     "open:android": "cap open android"
   },

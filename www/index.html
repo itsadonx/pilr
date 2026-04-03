@@ -3721,9 +3721,11 @@
             // Show receipt modal
             receiptModal.classList.add('active');
 
-            // Android app: open system print (NativePrint → Capgo → iframe) right after Generate Pass — real print, no duplicate save
+            // Android: auto-open system print after Generate Pass (native shell or Capacitor)
             try {
-                if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.getPlatform && Capacitor.getPlatform() === 'android') {
+                var autoPrint = hasAndroidPrintBridge() ||
+                    (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.getPlatform && Capacitor.getPlatform() === 'android');
+                if (autoPrint) {
                     setTimeout(function() {
                         printReceipt('cashier', { skipSave: true });
                     }, 450);
@@ -3891,6 +3893,11 @@
             }
         }
 
+        /** Standalone Kotlin WebView shell exposes window.AndroidPrint.printHtml — no Capacitor. */
+        function hasAndroidPrintBridge() {
+            return typeof AndroidPrint !== 'undefined' && typeof AndroidPrint.printHtml === 'function';
+        }
+
         // Strip slow external font CSS for Android WebView print (avoids blank output before fonts load).
         function htmlForAndroidNativePrint(html) {
             return html.replace(/<link[^>]*fonts\.googleapis\.com[^>]*>/gi, '');
@@ -3971,14 +3978,25 @@
         }
 
         function tryNativePrintHtml(html, jobName) {
+            var name = jobName || 'Document';
+            var optimized = htmlForAndroidNativePrint(html);
+
+            if (hasAndroidPrintBridge()) {
+                try {
+                    AndroidPrint.printHtml(optimized);
+                    return Promise.resolve(true);
+                } catch (e) {
+                    console.error('AndroidPrint.printHtml failed:', e);
+                    return Promise.resolve(false);
+                }
+            }
+
             if (!isCapacitorNativeApp()) {
                 return Promise.resolve(false);
             }
-            var name = jobName || 'Document';
             var platform = (typeof Capacitor !== 'undefined' && Capacitor.getPlatform) ? Capacitor.getPlatform() : 'web';
             if (platform === 'android') {
                 var np = getNativePrintPlugin();
-                var optimized = htmlForAndroidNativePrint(html);
                 if (np && typeof np.printHtml === 'function') {
                     return np.printHtml({ html: optimized, name: name }).then(function() {
                         return true;
@@ -4055,12 +4073,12 @@
 
             var htmlContent = buildReceiptHtmlDocument(receiptContent);
 
-            if (!isCapacitorNativeApp()) {
+            if (!hasAndroidPrintBridge() && !isCapacitorNativeApp()) {
                 printReceiptHtmlInIframe(htmlContent, saveReceiptOnce);
                 return;
             }
 
-            // Capacitor: NativePrint (Android) then Capgo printHtml, then iframe — not printWebView (often blank).
+            // AndroidPrint JS bridge (native shell), or Capacitor NativePrint / Capgo, then iframe.
             tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
                 if (usedNative) {
                     saveReceiptOnce();
@@ -5021,7 +5039,7 @@
                     '</body>' +
                     '</html>';
 
-                if (!isCapacitorNativeApp()) {
+                if (!hasAndroidPrintBridge() && !isCapacitorNativeApp()) {
                     printHtmlInIframeOnly(htmlContent);
                     return;
                 }
