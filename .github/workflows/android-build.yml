@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  debug-apk:
+  # Single job: Capacitor build bootstraps the Android SDK (local.properties); native shell reuses the same sdk.dir.
+  android-apks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,62 +30,44 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # --- Capacitor debug APK (Gradle downloads SDK; writes android/local.properties) ---
       - name: Copy root index.html into www (single source of truth)
         run: npm run copy:www
 
       - name: Sync web assets and Capacitor
         run: npx cap sync android
 
-      - name: Gradle executable
+      - name: Gradle executable (Capacitor)
         run: chmod +x android/gradlew
 
-      - name: Assemble debug APK
+      - name: Assemble Capacitor debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK artifact
+      - name: Upload Capacitor debug APK
         uses: actions/upload-artifact@v4
         with:
           name: entrance-pass-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-  # Standalone Kotlin WebView + AndroidPrint JavascriptInterface (reliable print; no Capacitor)
-  native-shell-apk:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: "platforms;android-35 build-tools;35.0.0"
-
+      # --- Native Kotlin WebView shell (same SDK path — no separate setup-android step) ---
       - name: Copy index.html into native app assets
         run: npm run copy:native-android
 
-      - name: Gradle SDK location (CI has no committed local.properties)
+      - name: Point native shell at same Android SDK as Capacitor
         run: |
-          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/.android/sdk}}"
-          if [ ! -d "$SDK" ]; then echo "Android SDK not found at: $SDK"; exit 1; fi
+          if [ ! -f android/local.properties ]; then
+            echo "android/local.properties missing after Capacitor build."
+            exit 1
+          fi
+          SDK=$(grep '^sdk.dir=' android/local.properties | sed 's/^sdk.dir=//' | tr -d '\r')
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "Invalid or missing sdk.dir from android/local.properties: [$SDK]"
+            exit 1
+          fi
           echo "sdk.dir=$SDK" > android-native-app/local.properties
 
-      - name: Gradle executable
+      - name: Gradle executable (native shell)
         run: chmod +x android-native-app/gradlew
 
       - name: Assemble native shell debug APK
