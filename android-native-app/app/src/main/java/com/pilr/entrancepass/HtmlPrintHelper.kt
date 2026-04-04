@@ -83,7 +83,15 @@ object HtmlPrintHelper {
                             }
                             val docName = "${jobName}_document"
                             val adapter: PrintDocumentAdapter = webView.createPrintDocumentAdapter(docName)
-                            pm.print(jobName, adapter, PrintAttributes.Builder().build())
+                            val attrs = try {
+                                PrintAttributes.Builder()
+                                    .setMediaSize(PrintAttributes.MediaSize.ISO_A6, true)
+                                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                                    .build()
+                            } catch (_: Exception) {
+                                PrintAttributes.Builder().build()
+                            }
+                            pm.print(jobName, adapter, attrs)
                         } catch (_: Exception) {
                             removePending()
                         }

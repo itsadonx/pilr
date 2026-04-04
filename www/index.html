@@ -2264,7 +2264,7 @@
                             <h3 style="margin: 0;">Printer</h3>
                         </div>
                         <p style="color: #7f8c8d; font-size: 13px; line-height: 1.5; margin: 12px 0 16px 0;">
-                            <strong>Default print</strong> uses the Android print sheet (same as before). <strong>Direct print</strong> sends plain text to a paired Bluetooth thermal printer (ESC/POS over SPP), matching the on-screen receipt layout. Amounts print as <strong>Php</strong> (ASCII) so symbols are not garbled on common thermal printers; the app still shows <strong>₱</strong> on screen. Pair the printer in Android Bluetooth settings first; on Android 12+ allow the Bluetooth permission when prompted.
+                            <strong>Default print</strong> opens the Android print dialog with <strong>ISO A6</strong> as the default paper size when supported; the receipt is limited to <strong>105mm</strong> wide so it also fits larger sheets (A4/Letter) centered. You can change paper or <strong>scale to fit</strong> in the dialog. <strong>Direct print</strong> uses a paired Bluetooth thermal roll (not A6). Amounts on thermal print as <strong>Php</strong> for printer compatibility; the screen still shows <strong>₱</strong>. Pair the printer in Android Bluetooth settings first; on Android 12+ allow Bluetooth when prompted.
                         </p>
                         <div class="form-group" style="margin-bottom: 10px;">
                             <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
@@ -3063,6 +3063,85 @@
         const settingsTabContents = settingsModal.querySelectorAll('.tab-content');
 
         const DEVICE_NUMBER_KEY = 'entrancePassDeviceNumber';
+        /** Firebase RTDB: maps hardware id -> saved device number (reinstall recovery). Rules must allow read/write. */
+        const DEVICE_NUMBER_BY_HW_PATH = 'deviceNumberByHardware';
+
+        function getAndroidStableDeviceId() {
+            try {
+                if (typeof AndroidPrint !== 'undefined' &&
+                    typeof AndroidPrint.getAndroidStableDeviceId === 'function') {
+                    var id = AndroidPrint.getAndroidStableDeviceId();
+                    if (id !== null && id !== undefined) {
+                        var s = String(id).trim();
+                        if (s && s !== 'undefined' && s !== 'null') {
+                            return s;
+                        }
+                    }
+                }
+            } catch (e) {}
+            return '';
+        }
+
+        function sanitizeRtdbPathSegment(s) {
+            return String(s || '').replace(/[.#$\[\]]/g, '_');
+        }
+
+        let _hwDeviceNumLookup = 'idle';
+
+        function tryRestoreDeviceNumberFromHardwareFirebase() {
+            if (getDeviceNumberConfigured() !== null) return;
+            var hw = getAndroidStableDeviceId();
+            if (!hw) return;
+            if (_hwDeviceNumLookup === 'pending') return;
+            if (_hwDeviceNumLookup === 'ok' || _hwDeviceNumLookup === 'empty') return;
+            if (typeof initializeFirebase !== 'function' || !initializeFirebase() || !db) return;
+
+            _hwDeviceNumLookup = 'pending';
+            var path = DEVICE_NUMBER_BY_HW_PATH + '/' + sanitizeRtdbPathSegment(hw);
+            try {
+                db.ref(path).once('value', function(snap) {
+                    var v = snap.val();
+                    var n = v && v.deviceNumber !== undefined ? parseInt(v.deviceNumber, 10) : NaN;
+                    if (!isNaN(n) && n >= 1 && n <= 999) {
+                        _hwDeviceNumLookup = 'ok';
+                        try {
+                            localStorage.setItem(DEVICE_NUMBER_KEY, String(n));
+                        } catch (e) {}
+                        var refEl = document.getElementById('refNumber');
+                        if (refEl && typeof generateRefNumber === 'function') {
+                            refEl.textContent = generateRefNumber();
+                        }
+                        if (typeof applySessionGate === 'function') {
+                            applySessionGate();
+                        }
+                    } else {
+                        _hwDeviceNumLookup = 'empty';
+                    }
+                }, function() {
+                    _hwDeviceNumLookup = 'failed';
+                });
+            } catch (e) {
+                _hwDeviceNumLookup = 'failed';
+                console.warn('tryRestoreDeviceNumberFromHardwareFirebase:', e);
+            }
+        }
+
+        function syncDeviceNumberToHardwareRegistry(n) {
+            var hw = getAndroidStableDeviceId();
+            if (!hw) return;
+            if (typeof initializeFirebase !== 'function' || !initializeFirebase() || !db) return;
+            var num = parseInt(n, 10);
+            if (isNaN(num) || num < 1 || num > 999) return;
+            var path = DEVICE_NUMBER_BY_HW_PATH + '/' + sanitizeRtdbPathSegment(hw);
+            try {
+                db.ref(path).set({
+                    deviceNumber: num,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+            } catch (e) {
+                console.warn('syncDeviceNumberToHardwareRegistry:', e);
+            }
+        }
 
         function getDeviceNumber() {
             try {
@@ -3122,6 +3201,13 @@
         function openDeviceNumberGate(reason) {
             if (!deviceNumberGateModal) return;
             deviceNumberGateReason = reason || 'unset';
+
+            if (deviceNumberGateReason === 'unset' && isAndroidNativeApp()) {
+                if (_hwDeviceNumLookup === 'failed') {
+                    _hwDeviceNumLookup = 'idle';
+                }
+                tryRestoreDeviceNumberFromHardwareFirebase();
+            }
 
             const current = getDeviceNumberConfigured();
             if (deviceNumberGateInput) {
@@ -3187,6 +3273,7 @@
                 if (n > 999) n = 999;
                 localStorage.setItem(DEVICE_NUMBER_KEY, String(n));
                 deviceNumberGateInput.value = String(n);
+                syncDeviceNumberToHardwareRegistry(n);
 
                 // Update the on-screen reference number immediately.
                 const refEl = document.getElementById('refNumber');
@@ -3222,6 +3309,7 @@
                 n = 999;
             }
             localStorage.setItem(DEVICE_NUMBER_KEY, String(n));
+            syncDeviceNumberToHardwareRegistry(n);
             if (input) {
                 input.value = String(n);
             }
@@ -4165,7 +4253,14 @@
                     const existing = localStorage.getItem(DEVICE_ID_KEY);
                     if (existing) return existing;
                 } catch (e) {}
-
+                var hw = getAndroidStableDeviceId();
+                if (hw) {
+                    var aid = 'android_' + sanitizeRtdbPathSegment(hw);
+                    try {
+                        localStorage.setItem(DEVICE_ID_KEY, aid);
+                    } catch (e) {}
+                    return aid;
+                }
                 const newId = 'dev_' + Date.now() + '_' + Math.random().toString(16).slice(2);
                 try {
                     localStorage.setItem(DEVICE_ID_KEY, newId);
@@ -4223,16 +4318,30 @@
 
                 const existingDeviceId = record.deviceId;
                 if (existingDeviceId && existingDeviceId !== localDeviceId) {
-                    // Conflict: same device number is used on a different device
-                    try {
-                        localStorage.setItem(registryOkCacheKey, 'false');
-                        localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), existingDeviceId);
-                        localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
-                    } catch (e) {}
-                    return { ok: false, reason: 'conflict' };
+                    let hardwareReclaimOk = false;
+                    const hw = getAndroidStableDeviceId();
+                    if (hw) {
+                        try {
+                            const hp = DEVICE_NUMBER_BY_HW_PATH + '/' + sanitizeRtdbPathSegment(hw);
+                            const hwRec = await getFirebaseValue(db.ref(hp));
+                            const mappedNum = hwRec && hwRec.deviceNumber !== undefined
+                                ? parseInt(hwRec.deviceNumber, 10) : NaN;
+                            if (!isNaN(mappedNum) && mappedNum === parseInt(String(deviceNum), 10)) {
+                                hardwareReclaimOk = true;
+                            }
+                        } catch (e) {}
+                    }
+                    if (!hardwareReclaimOk) {
+                        try {
+                            localStorage.setItem(registryOkCacheKey, 'false');
+                            localStorage.setItem(DEVICE_REGISTRY_DEVICE_ID_CACHE_PREFIX + String(deviceNum), existingDeviceId);
+                            localStorage.setItem(LAST_DEVICE_NUMBER_CHECKED_KEY, nowIso);
+                        } catch (e) {}
+                        return { ok: false, reason: 'conflict' };
+                    }
                 }
 
-                // Same device (or registry didn't have a deviceId yet) -> update lastSeen
+                // Same device (or reinstall reclaim) -> update lastSeen
                 await registryRef.update({
                     deviceId: localDeviceId,
                     firstSeenAt: record.firstSeenAt || nowIso,
@@ -6064,14 +6173,17 @@
                 '<html>' +
                 '<head>' +
                 '<meta charset="UTF-8">' +
+                '<meta name="viewport" content="width=device-width, initial-scale=1">' +
                 '<title>Entrance Pass</title>' +
                 '<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">' +
                 '<style>' +
                 '@media print {' +
-                '  @page { margin: 0; size: auto; }' +
-                '  body { margin: 0; padding: 0; }' +
+                '  @page { margin: 6mm; size: auto; }' +
+                '  html, body { margin: 0; padding: 0; width: 100%; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
+                '  .receipt-print-root { max-width: 100% !important; width: 100% !important; }' +
                 '}' +
                 '* { margin: 0; padding: 0; box-sizing: border-box; }' +
+                '.receipt-print-root { width: 100%; max-width: 105mm; margin: 0 auto; padding: 2mm 3mm; }' +
                 'body { font-family: "Courier New", Courier, monospace, Arial, sans-serif; padding: 4px 6px; background-color: white; line-height: 1.15; }' +
                 '.receipt-header { text-align: center; margin-bottom: 6px; line-height: 1.15; }' +
                 '.receipt-title { font-size: 20px; font-weight: bold; margin-bottom: 2px; letter-spacing: 0.5px; line-height: 1.1; }' +
@@ -6088,57 +6200,99 @@
                 '.receipt-totals { margin-top: 6px; font-size: 13px; line-height: 1.15; }' +
                 '.receipt-total-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-weight: bold; line-height: 1.15; }' +
                 '.receipt-footer { text-align: center; margin-top: 6px; font-size: 12px; font-style: italic; line-height: 1.15; }' +
+                '.receipt-detail-value, .receipt-pricing-item span, .receipt-total-row span { word-break: break-word; overflow-wrap: anywhere; }' +
                 '</style>' +
                 '</head>' +
-                '<body>' +
+                '<body><div class="receipt-print-root">' +
                 receiptContent +
-                '</body>' +
+                '</div></body>' +
                 '</html>';
         }
 
         /** Keeps "AM/PM" on one line on narrow thermal paper. */
         function tieAmPmNoBreak(str) {
-            return String(str || '').replace(/(\d) (AM|PM)\b/gi, '$1\u00A0$2');
+            return String(str || '')
+                .replace(/(\d) (AM|PM)\b/gi, '$1\u00A0$2')
+                .replace(/(\d{1,2}:\d{2}:\d{2}) (AM|PM)\b/gi, '$1\u00A0$2');
         }
 
         /**
-         * Plain-text receipt matching the modal (centered header, label/value columns, Php amounts for CP437 printers).
+         * Plain-text receipt for Bluetooth thermal (58mm ≈ 32 cols). Word-wraps so the printer
+         * never hard-splits mid-word; key/value rows match the modal (one line when they fit).
          */
         function buildReceiptThermalPlainText(width) {
-            width = width || 42;
-            function center(s) {
-                s = String(s || '').trim();
-                if (!s) return '';
-                if (s.length >= width) return s.substring(0, width);
-                var pad = Math.max(0, Math.floor((width - s.length) / 2));
-                return ' '.repeat(pad) + s;
+            width = width || 32;
+            function wrapWords(text, maxLen) {
+                text = String(text || '').trim();
+                if (!text) return [];
+                var words = text.split(/\s+/).filter(Boolean);
+                var out = [];
+                var cur = '';
+                for (var wi = 0; wi < words.length; wi++) {
+                    var w = words[wi];
+                    var trial = cur ? (cur + ' ' + w) : w;
+                    if (trial.length <= maxLen) {
+                        cur = trial;
+                    } else {
+                        if (cur) out.push(cur);
+                        cur = '';
+                        if (w.length > maxLen) {
+                            for (var c = 0; c < w.length; c += maxLen) {
+                                out.push(w.substring(c, c + maxLen));
+                            }
+                        } else {
+                            cur = w;
+                        }
+                    }
+                }
+                if (cur) out.push(cur);
+                return out;
+            }
+            function centerLines(text) {
+                return wrapWords(String(text || '').trim(), width).map(function(line) {
+                    if (line.length >= width) return line.substring(0, width);
+                    var pad = Math.max(0, Math.floor((width - line.length) / 2));
+                    return ' '.repeat(pad) + line;
+                });
             }
             function divider() {
                 return '-'.repeat(width);
             }
-            function twoCol(left, right) {
-                left = String(left || '');
-                right = String(right || '');
-                if (right.length > width - 2) {
-                    return left + '\n  ' + right;
+            function pushKeyValue(lines, label, value) {
+                var lab = String(label || '').trim();
+                var val = tieAmPmNoBreak(String(value || '').trim());
+                if (lab.length + 1 + val.length <= width) {
+                    lines.push(lab + ' '.repeat(width - lab.length - val.length) + val);
+                    return;
                 }
-                var maxL = width - right.length - 1;
-                var L = left.length > maxL ? left.substring(0, maxL) : left;
-                var gap = width - L.length - right.length;
-                if (gap < 1) return left + '\n  ' + right;
-                return L + ' '.repeat(gap) + right;
+                lines.push(lab);
+                wrapWords(val, width - 2).forEach(function(wl) {
+                    lines.push('  ' + wl);
+                });
+            }
+            function pushKeyValueAmount(lines, leftLabel, rightAmount) {
+                var L = String(leftLabel || '');
+                var R = String(rightAmount || '');
+                if (L.length + 1 + R.length <= width) {
+                    lines.push(L + ' '.repeat(width - L.length - R.length) + R);
+                    return;
+                }
+                lines.push(L);
+                wrapWords(R, width - 2).forEach(function(wl) {
+                    lines.push('  ' + wl);
+                });
             }
             var lines = [];
             var titleEl = document.querySelector('#receiptContainer .receipt-title');
-            lines.push(center(titleEl ? titleEl.textContent.trim() : 'PUNTA ISLA LAKE RESORT'));
+            lines.push.apply(lines, centerLines(titleEl ? titleEl.textContent.trim() : 'PUNTA ISLA LAKE RESORT'));
             var addrEl = document.getElementById('receiptTopAddress');
             if (addrEl && addrEl.textContent.trim()) {
-                lines.push(center(addrEl.textContent.trim()));
+                lines.push.apply(lines, centerLines(addrEl.textContent.trim()));
             }
             var subEl = document.querySelector('#receiptContainer .receipt-subtitle');
-            if (subEl) lines.push(center(subEl.textContent.trim()));
+            if (subEl) lines.push.apply(lines, centerLines(subEl.textContent.trim()));
             var copyEl = document.getElementById('receiptCopyLabel');
-            if (copyEl) lines.push(center(copyEl.textContent.trim()));
+            if (copyEl) lines.push.apply(lines, centerLines(copyEl.textContent.trim()));
             lines.push(divider());
             var detailsRoot = document.getElementById('receiptDetails');
             if (detailsRoot) {
@@ -6149,9 +6303,7 @@
                     var lab = row.querySelector('.receipt-detail-label');
                     var val = row.querySelector('.receipt-detail-value');
                     if (!lab || !val) continue;
-                    var lt = lab.textContent.replace(/\s+$/,'').trim();
-                    var vt = tieAmPmNoBreak(val.textContent.trim());
-                    lines.push(twoCol(lt, vt));
+                    pushKeyValue(lines, lab.textContent.replace(/\s+$/,'').trim(), val.textContent.trim());
                 }
             }
             lines.push(divider());
@@ -6165,27 +6317,26 @@
                         var tClean = t.replace(/₱/g, '').replace(/Php/gi, '').trim();
                         var m = tClean.match(/^(.+?):\s*(\d+)\s*x\s*([\d.]+)\s*$/);
                         if (m) {
-                            lines.push(twoCol(m[1].trim() + ': ' + m[2] + ' x', 'Php' + parseFloat(m[3]).toFixed(2)));
+                            pushKeyValueAmount(lines, m[1].trim() + ': ' + m[2] + ' x', 'Php' + parseFloat(m[3]).toFixed(2));
                         } else {
-                            lines.push(t.replace(/₱/g, 'Php'));
+                            wrapWords(t.replace(/₱/g, 'Php'), width).forEach(function(x) { lines.push(x); });
                         }
                     }
                 } else {
                     var emptyMsg = pricingRoot.textContent.trim();
-                    if (emptyMsg) lines.push(emptyMsg);
+                    if (emptyMsg) wrapWords(emptyMsg, width).forEach(function(x) { lines.push(x); });
                 }
             }
             lines.push(divider());
             var tpax = document.getElementById('receiptTotalPax');
             var tt = document.getElementById('receiptTotal');
-            if (tpax) lines.push(twoCol('Total Pax:', tpax.textContent.trim()));
+            if (tpax) pushKeyValue(lines, 'Total Pax:', tpax.textContent.trim());
             if (tt) {
-                var tot = tt.textContent.trim().replace(/₱/g, 'Php');
-                lines.push(twoCol('Total:', tot));
+                pushKeyValue(lines, 'Total:', tt.textContent.trim().replace(/₱/g, 'Php'));
             }
             lines.push(divider());
             var foot = document.querySelector('#receiptContainer .receipt-footer');
-            if (foot) lines.push(center(foot.textContent.trim()));
+            if (foot) lines.push.apply(lines, centerLines(foot.textContent.trim()));
             return lines.join('\n');
         }
 
@@ -6295,7 +6446,7 @@
             var thermalPlain = '';
             if (hasAndroidPrintBridge()) {
                 try {
-                    thermalPlain = buildReceiptThermalPlainText(42);
+                    thermalPlain = buildReceiptThermalPlainText(32);
                 } catch (e) {
                     console.warn('buildReceiptThermalPlainText:', e);
                     thermalPlain = '';
@@ -6442,6 +6593,11 @@
                 db = firebase.database();
                 firebaseInitialized = true;
                 console.log('Firebase initialized successfully');
+                try {
+                    tryRestoreDeviceNumberFromHardwareFirebase();
+                } catch (e) {
+                    console.warn('Hardware device number restore:', e);
+                }
                 return true;
             } catch (e) {
                 console.error('Error initializing Firebase:', e);
@@ -7685,9 +7841,10 @@
                     '<meta charset="UTF-8">' +
                     '<style>' +
                     '@media print {' +
-                    '  @page { margin: 10mm; size: auto; }' +
+                    '  @page { margin: 6mm; size: auto; }' +
                     '  body { margin: 0; padding: 0; width: 100%; min-height: 100vh; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
-                    '  .recon-print-outer, .recon-print-inner { width: 100%; max-width: 100%; }' +
+                    '  .recon-print-outer { width: 100%; max-width: 100%; }' +
+                    '  .recon-print-inner { width: 100%; max-width: 100%; margin: 0 auto; }' +
                     '}' +
                     '* { margin: 0; padding: 0; box-sizing: border-box; }' +
                     'body { font-family: "Courier New", Courier, monospace, Arial, sans-serif; padding: 0; background-color: white; font-size: 9pt; line-height: 1.2; }' +

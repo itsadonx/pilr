@@ -2,6 +2,7 @@ package com.pilr.entrancepass
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -117,6 +118,16 @@ class PrintJsBridge(private val activity: AppCompatActivity) {
             if (activity is MainActivity) {
                 activity.ensureBluetoothPrintPermissions()
             }
+        }
+    }
+
+    /** Stable per-device id (survives app reinstall). Used with Firebase to restore device number. */
+    @JavascriptInterface
+    fun getAndroidStableDeviceId(): String {
+        return try {
+            Settings.Secure.getString(activity.contentResolver, Settings.Secure.ANDROID_ID)?.trim() ?: ""
+        } catch (_: Exception) {
+            ""
         }
     }
 }
