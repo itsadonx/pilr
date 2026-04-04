@@ -65,6 +65,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -74,12 +78,18 @@ jobs:
       - name: Copy index.html into native app assets
         run: npm run copy:native-android
 
+      - name: Gradle SDK location (CI has no committed local.properties)
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/.android/sdk}}"
+          if [ ! -d "$SDK" ]; then echo "Android SDK not found at: $SDK"; exit 1; fi
+          echo "sdk.dir=$SDK" > android-native-app/local.properties
+
       - name: Gradle executable
         run: chmod +x android-native-app/gradlew
 
       - name: Assemble native shell debug APK
         working-directory: android-native-app
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload native shell APK
         uses: actions/upload-artifact@v4
