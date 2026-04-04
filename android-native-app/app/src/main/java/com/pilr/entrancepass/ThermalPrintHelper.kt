@@ -1,9 +1,10 @@
 package com.pilr.entrancepass
 
 import android.app.Activity
-import android.content.Context
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
+import android.content.Context
 import android.widget.Toast
 import androidx.core.text.HtmlCompat
 import java.io.BufferedOutputStream
@@ -54,8 +55,8 @@ object ThermalPrintHelper {
                     return@thread
                 }
 
-                val device = adapter.bondedDevices?.firstOrNull {
-                    it.address.equals(macAddress, ignoreCase = true)
+                val device = adapter.bondedDevices?.firstOrNull { dev ->
+                    dev.address.equals(macAddress, ignoreCase = true)
                 }
                 if (device == null) {
                     activity.runOnUiThread {
