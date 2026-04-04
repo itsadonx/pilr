@@ -1,128 +1,111 @@
 package com.pilr.entrancepass
 
-import android.Manifest
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothSocket
-import android.content.pm.PackageManager
-import android.os.Build
+import android.bluetooth.BluetoothManager
 import android.webkit.JavascriptInterface
-import androidx.core.content.ContextCompat
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.OutputStream
-import java.util.UUID
 
 /**
- * Exposed to JavaScript as [AndroidPrint].printHtml(html) — direct path to [PrintManager], no Capacitor.
+ * Exposed to JavaScript as [AndroidPrint].
+ * [printHtml] uses Default (system PrintManager) or Direct (Bluetooth ESC/POS) based on Settings → Printer.
  */
 class PrintJsBridge(private val activity: AppCompatActivity) {
 
-    companion object {
-        // Standard SerialPortService ID used by most ESC/POS bluetooth printers.
-        private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-    }
-
+    /** Single entry point (avoid overloaded names — WebView JS bridge can be ambiguous). */
     @JavascriptInterface
-    fun printHtml(html: String) {
+    fun printHtml(html: String, jobName: String?) {
         if (html.isBlank()) return
-        HtmlPrintHelper.printHtml(activity, html, "Entrance Pass")
+        val job = jobName?.trim()?.takeIf { it.isNotEmpty() && it != "undefined" } ?: "Entrance Pass"
+        activity.runOnUiThread {
+            if (PrinterPreferences.useDirectPrint(activity)) {
+                val mac = PrinterPreferences.getPrinterMac(activity)
+                if (mac.isBlank()) {
+                    Toast.makeText(
+                        activity,
+                        "Direct print is on but no printer is selected. Open Settings → Printer.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    HtmlPrintHelper.printHtml(activity, html, job)
+                    return@runOnUiThread
+                }
+                if (!BluetoothPermissionHelper.hasConnectPermission(activity)) {
+                    Toast.makeText(
+                        activity,
+                        "Allow Bluetooth to print directly, or turn off Direct print in Settings.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    HtmlPrintHelper.printHtml(activity, html, job)
+                    return@runOnUiThread
+                }
+                ThermalPrintHelper.printHtmlToThermal(activity, html, mac)
+            } else {
+                HtmlPrintHelper.printHtml(activity, html, job)
+            }
+        }
     }
 
     @JavascriptInterface
-    fun listPairedBluetoothPrinters(): String {
-        val out = JSONObject()
-        try {
-            if (!hasBluetoothPermission()) {
-                out.put("ok", false)
-                out.put("error", "permission_required")
-                return out.toString()
-            }
-
-            val adapter = BluetoothAdapter.getDefaultAdapter()
-            if (adapter == null) {
-                out.put("ok", false)
-                out.put("error", "bluetooth_not_supported")
-                return out.toString()
-            }
-
-            val arr = JSONArray()
-            val bonded: Set<BluetoothDevice> = adapter.bondedDevices ?: emptySet()
-            bonded.forEach { d ->
-                if (!d.address.isNullOrBlank()) {
-                    val item = JSONObject()
-                    item.put("name", d.name ?: "Bluetooth Printer")
-                    item.put("address", d.address)
-                    arr.put(item)
-                }
-            }
-            out.put("ok", true)
-            out.put("printers", arr)
-        } catch (e: Exception) {
-            out.put("ok", false)
-            out.put("error", e.message ?: "unknown_error")
+    fun getPrinterSettingsJson(): String {
+        return try {
+            JSONObject().apply {
+                put("directPrint", PrinterPreferences.useDirectPrint(activity))
+                put("printerAddress", PrinterPreferences.getPrinterMac(activity))
+                put("printerName", PrinterPreferences.getPrinterName(activity))
+            }.toString()
+        } catch (_: Exception) {
+            "{}"
         }
-        return out.toString()
+    }
+
+    @JavascriptInterface
+    fun setPrinterSettings(directPrint: String, printerAddress: String, printerName: String) {
+        val direct = directPrint == "true" || directPrint == "1"
+        PrinterPreferences.setDirectPrint(activity, direct)
+        val mac = printerAddress.trim().takeIf { it.isNotEmpty() && it != "undefined" } ?: ""
+        val name = printerName.trim().takeIf { it.isNotEmpty() && it != "undefined" } ?: ""
+        if (mac.isNotEmpty()) {
+            PrinterPreferences.setPrinter(activity, mac, name)
+        }
     }
 
     @SuppressLint("MissingPermission")
     @JavascriptInterface
-    fun printEscPosText(address: String, text: String): String {
-        val out = JSONObject()
-        var socket: BluetoothSocket? = null
-        var stream: OutputStream? = null
-        try {
-            if (address.isBlank() || text.isBlank()) {
-                out.put("ok", false)
-                out.put("error", "invalid_arguments")
-                return out.toString()
+    fun getBondedPrintersJson(): String {
+        return try {
+            if (!BluetoothPermissionHelper.hasConnectPermission(activity)) {
+                return JSONObject().put("error", "bluetooth_permission").toString()
             }
-            if (!hasBluetoothPermission()) {
-                out.put("ok", false)
-                out.put("error", "permission_required")
-                return out.toString()
+            val adapter = (activity.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+                ?: return JSONObject().put("error", "no_bluetooth").toString()
+            if (!adapter.isEnabled) {
+                return JSONObject().put("error", "bluetooth_off").toString()
             }
-
-            val adapter = BluetoothAdapter.getDefaultAdapter()
-            if (adapter == null) {
-                out.put("ok", false)
-                out.put("error", "bluetooth_not_supported")
-                return out.toString()
-            }
-            val device = adapter.getRemoteDevice(address)
-            adapter.cancelDiscovery()
-
-            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            socket.connect()
-            stream = socket.outputStream
-
-            // ESC/POS init
-            stream.write(byteArrayOf(0x1B, 0x40))
-            stream.write(text.toByteArray(Charsets.UTF_8))
-            // Feed and cut (many printers support this)
-            stream.write(byteArrayOf(0x0A, 0x0A, 0x0A))
-            stream.write(byteArrayOf(0x1D, 0x56, 0x00))
-            stream.flush()
-
-            out.put("ok", true)
-            return out.toString()
+            val arr = JSONArray()
+            adapter.bondedDevices
+                ?.sortedWith(compareBy({ it.name ?: "" }, { it.address }))
+                ?.forEach { d ->
+                    arr.put(
+                        JSONObject().apply {
+                            put("name", d.name ?: "Unknown device")
+                            put("address", d.address)
+                        }
+                    )
+                }
+            JSONObject().put("printers", arr).toString()
         } catch (e: Exception) {
-            out.put("ok", false)
-            out.put("error", e.message ?: "print_failed")
-            return out.toString()
-        } finally {
-            try { stream?.close() } catch (_: Exception) {}
-            try { socket?.close() } catch (_: Exception) {}
+            JSONObject().put("error", e.message ?: "unknown").toString()
         }
     }
 
-    private fun hasBluetoothPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ContextCompat.checkSelfPermission(activity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        } else {
-            true
+    @JavascriptInterface
+    fun requestBluetoothConnectPermission() {
+        activity.runOnUiThread {
+            if (activity is MainActivity) {
+                activity.ensureBluetoothConnectPermission()
+            }
         }
     }
 }
