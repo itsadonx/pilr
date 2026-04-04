@@ -70,11 +70,8 @@ object ThermalPrintHelper {
                 }
 
                 socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-                try {
-                    adapter.cancelDiscovery()
-                } catch (_: SecurityException) {
-                    // Should not happen if BLUETOOTH_SCAN is granted; continue to connect()
-                }
+                // Do not call adapter.cancelDiscovery() here: on API 31+ it requires
+                // BLUETOOTH_SCAN. We never start discovery; connect only needs BLUETOOTH_CONNECT.
                 socket.connect()
 
                 val out = BufferedOutputStream(socket.outputStream)

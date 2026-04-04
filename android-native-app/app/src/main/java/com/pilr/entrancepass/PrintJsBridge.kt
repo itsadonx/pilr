@@ -37,7 +37,7 @@ class PrintJsBridge(private val activity: AppCompatActivity) {
                     }
                     Toast.makeText(
                         activity,
-                        "Allow Nearby devices / Bluetooth (Connect + Scan), then print again.",
+                        "Allow Nearby devices / Bluetooth, then print again.",
                         Toast.LENGTH_LONG
                     ).show()
                     return@runOnUiThread

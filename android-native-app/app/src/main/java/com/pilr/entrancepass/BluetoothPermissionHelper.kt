@@ -8,19 +8,17 @@ import androidx.core.content.ContextCompat
 
 object BluetoothPermissionHelper {
 
-    /** Listing bonded devices + connecting + [android.bluetooth.BluetoothAdapter.cancelDiscovery] need these on API 31+. */
+    /**
+     * Direct print only uses paired devices + RFCOMM (no BLE scan / no discovery).
+     * On API 31+ that requires [Manifest.permission.BLUETOOTH_CONNECT] only — not BLUETOOTH_SCAN.
+     */
     fun hasBluetoothPrintPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return true
         }
-        val connect = ContextCompat.checkSelfPermission(
+        return ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.BLUETOOTH_CONNECT
         ) == PackageManager.PERMISSION_GRANTED
-        val scan = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.BLUETOOTH_SCAN
-        ) == PackageManager.PERMISSION_GRANTED
-        return connect && scan
     }
 }

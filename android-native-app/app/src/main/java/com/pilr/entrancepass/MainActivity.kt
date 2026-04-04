@@ -23,8 +23,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
 
     /**
-     * @return true if Bluetooth permissions for direct thermal print are already granted (or not required on this API).
-     * On API 31+ requests **BLUETOOTH_CONNECT** and **BLUETOOTH_SCAN** (needed for cancelDiscovery + RFCOMM).
+     * @return true if Bluetooth permission for direct thermal print is already granted (or not required on this API).
+     * On API 31+ requests **BLUETOOTH_CONNECT** only (paired printer + RFCOMM; no scan/discovery).
      */
     fun ensureBluetoothConnectPermission(): Boolean {
         return ensureBluetoothPrintPermissions()
@@ -34,21 +34,16 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return true
         }
-        val need = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) !=
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
         ) {
-            need.add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            need.add(Manifest.permission.BLUETOOTH_SCAN)
-        }
-        if (need.isEmpty()) {
             return true
         }
-        ActivityCompat.requestPermissions(this, need.toTypedArray(), REQ_BT_PRINT)
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
+            REQ_BT_PRINT
+        )
         return false
     }
 

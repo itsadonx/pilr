@@ -10,11 +10,8 @@
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
+    <!-- API 31+: paired thermal printer + RFCOMM only; no BLE scan / discovery -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- cancelDiscovery() before RFCOMM connect needs SCAN on API 31+; neverForLocation = not using BT for location -->
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation" />
 
     <application
         android:allowBackup="true"
