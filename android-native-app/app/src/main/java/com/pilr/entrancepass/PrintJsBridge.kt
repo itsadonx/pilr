@@ -14,11 +14,20 @@ import org.json.JSONObject
  */
 class PrintJsBridge(private val activity: AppCompatActivity) {
 
-    /** Single entry point (avoid overloaded names — WebView JS bridge can be ambiguous). */
     @JavascriptInterface
     fun printHtml(html: String, jobName: String?) {
+        printHtml(html, jobName, "")
+    }
+
+    /**
+     * [thermalPlain] preformatted receipt lines (same layout as modal). Pass "" when unused.
+     * Direct Bluetooth print uses this so output matches the on-screen receipt (no stray HTML title text).
+     */
+    @JavascriptInterface
+    fun printHtml(html: String, jobName: String?, thermalPlain: String) {
         if (html.isBlank()) return
         val job = jobName?.trim()?.takeIf { it.isNotEmpty() && it != "undefined" } ?: "Entrance Pass"
+        val tp = thermalPlain.trim().takeIf { it.isNotEmpty() && it != "undefined" }
         activity.runOnUiThread {
             if (PrinterPreferences.useDirectPrint(activity)) {
                 val mac = PrinterPreferences.getPrinterMac(activity)
@@ -42,7 +51,7 @@ class PrintJsBridge(private val activity: AppCompatActivity) {
                     ).show()
                     return@runOnUiThread
                 }
-                ThermalPrintHelper.printHtmlToThermal(activity, html, mac)
+                ThermalPrintHelper.printToThermal(activity, mac, html, tp)
             } else {
                 HtmlPrintHelper.printHtml(activity, html, job)
             }

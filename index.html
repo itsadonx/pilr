@@ -2264,7 +2264,7 @@
                             <h3 style="margin: 0;">Printer</h3>
                         </div>
                         <p style="color: #7f8c8d; font-size: 13px; line-height: 1.5; margin: 12px 0 16px 0;">
-                            <strong>Default print</strong> uses the Android print sheet (same as before). <strong>Direct print</strong> sends plain text to a paired Bluetooth thermal printer (ESC/POS over SPP). Pair the printer in Android Bluetooth settings first; on Android 12+ allow the Bluetooth permission when prompted.
+                            <strong>Default print</strong> uses the Android print sheet (same as before). <strong>Direct print</strong> sends plain text to a paired Bluetooth thermal printer (ESC/POS over SPP), matching the on-screen receipt layout. Amounts print as <strong>Php</strong> (ASCII) so symbols are not garbled on common thermal printers; the app still shows <strong>₱</strong> on screen. Pair the printer in Android Bluetooth settings first; on Android 12+ allow the Bluetooth permission when prompted.
                         </p>
                         <div class="form-group" style="margin-bottom: 10px;">
                             <label style="display: flex; align-items: center; gap: 8px; font-weight: normal; cursor: pointer;">
@@ -3625,7 +3625,7 @@
             pricingTableBody.innerHTML = pricingData.map((entry, index) => `
                 <tr>
                     <td>${escapeHtml(entry.details)}</td>
-                    <td>$${entry.price}</td>
+                    <td>₱${entry.price}</td>
                     <td>
                         <div class="action-buttons">
                             <button class="icon-btn edit-btn" onclick="editPricing(${index})" title="Edit" aria-label="Edit">
@@ -5763,7 +5763,7 @@
                 hour12: true
             };
             const dateStr = now.toLocaleDateString('en-US', dateOptions);
-            const timeStr = now.toLocaleTimeString('en-US', timeOptions);
+            const timeStr = tieAmPmNoBreak(now.toLocaleTimeString('en-US', timeOptions));
             const dateTimeStr = `${dateStr} at ${timeStr}`;
 
             // Get form data
@@ -5878,7 +5878,7 @@
                     copyType: copyType, // 'cashier' or 'customer'
                     copyLabel: copyType === 'customer' ? 'CUSTOMER\'S COPY' : 'CASHIER\'S COPY',
                     totalPax: parseInt(document.getElementById('receiptTotalPax').textContent.replace(' Pax', '')) || 0,
-                    totalAmount: parseFloat(document.getElementById('receiptTotal').textContent.replace('₱', '').replace(',', '')) || 0,
+                    totalAmount: parseFloat(document.getElementById('receiptTotal').textContent.replace(/₱|Php|PHP/gi, '').replace(/,/g, '')) || 0,
                     status: 'Active', // Default status is Active
                     createdBy: currentUser ? currentUser.name : '', // Store the user who created the transaction
                     createdByRole: currentUser ? currentUser.role : '', // Store the role of the creator
@@ -6064,7 +6064,7 @@
                 '<html>' +
                 '<head>' +
                 '<meta charset="UTF-8">' +
-                '<title>Receipt</title>' +
+                '<title>Entrance Pass</title>' +
                 '<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">' +
                 '<style>' +
                 '@media print {' +
@@ -6096,13 +6096,107 @@
                 '</html>';
         }
 
-        function tryNativePrintHtml(html, jobName) {
+        /** Keeps "AM/PM" on one line on narrow thermal paper. */
+        function tieAmPmNoBreak(str) {
+            return String(str || '').replace(/(\d) (AM|PM)\b/gi, '$1\u00A0$2');
+        }
+
+        /**
+         * Plain-text receipt matching the modal (centered header, label/value columns, Php amounts for CP437 printers).
+         */
+        function buildReceiptThermalPlainText(width) {
+            width = width || 42;
+            function center(s) {
+                s = String(s || '').trim();
+                if (!s) return '';
+                if (s.length >= width) return s.substring(0, width);
+                var pad = Math.max(0, Math.floor((width - s.length) / 2));
+                return ' '.repeat(pad) + s;
+            }
+            function divider() {
+                return '-'.repeat(width);
+            }
+            function twoCol(left, right) {
+                left = String(left || '');
+                right = String(right || '');
+                if (right.length > width - 2) {
+                    return left + '\n  ' + right;
+                }
+                var maxL = width - right.length - 1;
+                var L = left.length > maxL ? left.substring(0, maxL) : left;
+                var gap = width - L.length - right.length;
+                if (gap < 1) return left + '\n  ' + right;
+                return L + ' '.repeat(gap) + right;
+            }
+            var lines = [];
+            var titleEl = document.querySelector('#receiptContainer .receipt-title');
+            lines.push(center(titleEl ? titleEl.textContent.trim() : 'PUNTA ISLA LAKE RESORT'));
+            var addrEl = document.getElementById('receiptTopAddress');
+            if (addrEl && addrEl.textContent.trim()) {
+                lines.push(center(addrEl.textContent.trim()));
+            }
+            var subEl = document.querySelector('#receiptContainer .receipt-subtitle');
+            if (subEl) lines.push(center(subEl.textContent.trim()));
+            var copyEl = document.getElementById('receiptCopyLabel');
+            if (copyEl) lines.push(center(copyEl.textContent.trim()));
+            lines.push(divider());
+            var detailsRoot = document.getElementById('receiptDetails');
+            if (detailsRoot) {
+                var rows = detailsRoot.querySelectorAll('.receipt-detail-row');
+                for (var i = 0; i < rows.length; i++) {
+                    var row = rows[i];
+                    if (row.style && row.style.display === 'none') continue;
+                    var lab = row.querySelector('.receipt-detail-label');
+                    var val = row.querySelector('.receipt-detail-value');
+                    if (!lab || !val) continue;
+                    var lt = lab.textContent.replace(/\s+$/,'').trim();
+                    var vt = tieAmPmNoBreak(val.textContent.trim());
+                    lines.push(twoCol(lt, vt));
+                }
+            }
+            lines.push(divider());
+            var pricingRoot = document.getElementById('receiptPricing');
+            if (pricingRoot) {
+                var items = pricingRoot.querySelectorAll('.receipt-pricing-item');
+                if (items.length) {
+                    for (var j = 0; j < items.length; j++) {
+                        var sp = items[j].querySelector('span');
+                        var t = sp ? sp.textContent.trim() : items[j].textContent.trim();
+                        var tClean = t.replace(/₱/g, '').replace(/Php/gi, '').trim();
+                        var m = tClean.match(/^(.+?):\s*(\d+)\s*x\s*([\d.]+)\s*$/);
+                        if (m) {
+                            lines.push(twoCol(m[1].trim() + ': ' + m[2] + ' x', 'Php' + parseFloat(m[3]).toFixed(2)));
+                        } else {
+                            lines.push(t.replace(/₱/g, 'Php'));
+                        }
+                    }
+                } else {
+                    var emptyMsg = pricingRoot.textContent.trim();
+                    if (emptyMsg) lines.push(emptyMsg);
+                }
+            }
+            lines.push(divider());
+            var tpax = document.getElementById('receiptTotalPax');
+            var tt = document.getElementById('receiptTotal');
+            if (tpax) lines.push(twoCol('Total Pax:', tpax.textContent.trim()));
+            if (tt) {
+                var tot = tt.textContent.trim().replace(/₱/g, 'Php');
+                lines.push(twoCol('Total:', tot));
+            }
+            lines.push(divider());
+            var foot = document.querySelector('#receiptContainer .receipt-footer');
+            if (foot) lines.push(center(foot.textContent.trim()));
+            return lines.join('\n');
+        }
+
+        function tryNativePrintHtml(html, jobName, thermalPlain) {
             var name = jobName || 'Document';
             var optimized = htmlForAndroidNativePrint(html);
+            var tp = (thermalPlain !== undefined && thermalPlain !== null) ? String(thermalPlain) : '';
 
             if (hasAndroidPrintBridge()) {
                 try {
-                    AndroidPrint.printHtml(optimized, name);
+                    AndroidPrint.printHtml(optimized, name, tp);
                     return Promise.resolve(true);
                 } catch (e) {
                     console.error('AndroidPrint.printHtml failed:', e);
@@ -6198,7 +6292,16 @@
             }
 
             // AndroidPrint JS bridge (native shell), or Capacitor NativePrint / Capgo, then iframe.
-            tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt').then(function(usedNative) {
+            var thermalPlain = '';
+            if (hasAndroidPrintBridge()) {
+                try {
+                    thermalPlain = buildReceiptThermalPlainText(42);
+                } catch (e) {
+                    console.warn('buildReceiptThermalPlainText:', e);
+                    thermalPlain = '';
+                }
+            }
+            tryNativePrintHtml(htmlContent, 'Entrance Pass Receipt', thermalPlain).then(function(usedNative) {
                 if (usedNative) {
                     saveReceiptOnce();
                     return;
@@ -7605,7 +7708,7 @@
                     return;
                 }
 
-                tryNativePrintHtml(htmlContent, 'Reconciliation Report').then(function(usedNative) {
+                tryNativePrintHtml(htmlContent, 'Reconciliation Report', '').then(function(usedNative) {
                     if (usedNative) {
                         return;
                     }
@@ -7997,7 +8100,7 @@
                 }
 
                 // Populate receipt fields with saved receipt data
-                document.getElementById('receiptDateTime').textContent = receipt.dateTime || '';
+                document.getElementById('receiptDateTime').textContent = tieAmPmNoBreak(receipt.dateTime || '');
                 document.getElementById('receiptRefNumber').textContent = receipt.refNumber || '';
                 document.getElementById('receiptEntryType').textContent = receipt.entryType || 'N/A';
                 document.getElementById('receiptEntryMode').textContent = receipt.entryMode || 'N/A';
