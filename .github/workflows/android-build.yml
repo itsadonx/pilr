@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Single job: Capacitor build bootstraps the Android SDK (local.properties); native shell reuses the same sdk.dir.
+  # Gradle on CI often uses ANDROID_* env only and never creates android/local.properties — pin sdk.dir explicitly.
   android-apks:
     runs-on: ubuntu-latest
     steps:
@@ -30,12 +30,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # --- Capacitor debug APK (Gradle downloads SDK; writes android/local.properties) ---
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
       - name: Copy root index.html into www (single source of truth)
         run: npm run copy:www
 
       - name: Sync web assets and Capacitor
         run: npx cap sync android
+
+      - name: Pin sdk.dir for both Gradle projects (do not rely on local.properties being auto-created)
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "Android SDK not found. ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT ANDROID_HOME=$ANDROID_HOME"
+            exit 1
+          fi
+          echo "Using SDK: $SDK"
+          echo "sdk.dir=$SDK" > android/local.properties
+          echo "sdk.dir=$SDK" > android-native-app/local.properties
 
       - name: Gradle executable (Capacitor)
         run: chmod +x android/gradlew
@@ -50,21 +65,12 @@ jobs:
           name: entrance-pass-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      # --- Native Kotlin WebView shell (same SDK path — no separate setup-android step) ---
       - name: Copy index.html into native app assets
         run: npm run copy:native-android
 
-      - name: Point native shell at same Android SDK as Capacitor
+      - name: Restore sdk.dir for native shell (copy step must not drop it)
         run: |
-          if [ ! -f android/local.properties ]; then
-            echo "android/local.properties missing after Capacitor build."
-            exit 1
-          fi
-          SDK=$(grep '^sdk.dir=' android/local.properties | sed 's/^sdk.dir=//' | tr -d '\r')
-          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
-            echo "Invalid or missing sdk.dir from android/local.properties: [$SDK]"
-            exit 1
-          fi
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           echo "sdk.dir=$SDK" > android-native-app/local.properties
 
       - name: Gradle executable (native shell)
