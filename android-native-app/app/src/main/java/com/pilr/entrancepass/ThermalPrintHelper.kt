@@ -2,7 +2,6 @@ package com.pilr.entrancepass
 
 import android.app.Activity
 import android.content.Context
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.widget.Toast
@@ -70,7 +69,11 @@ object ThermalPrintHelper {
                 }
 
                 socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-                adapter.cancelDiscovery()
+                try {
+                    adapter.cancelDiscovery()
+                } catch (_: SecurityException) {
+                    // Should not happen if BLUETOOTH_SCAN is granted; continue to connect()
+                }
                 socket.connect()
 
                 val out = BufferedOutputStream(socket.outputStream)

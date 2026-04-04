@@ -31,13 +31,15 @@ class PrintJsBridge(private val activity: AppCompatActivity) {
                     HtmlPrintHelper.printHtml(activity, html, job)
                     return@runOnUiThread
                 }
-                if (!BluetoothPermissionHelper.hasConnectPermission(activity)) {
+                if (!BluetoothPermissionHelper.hasBluetoothPrintPermission(activity)) {
+                    if (activity is MainActivity) {
+                        activity.ensureBluetoothPrintPermissions()
+                    }
                     Toast.makeText(
                         activity,
-                        "Allow Bluetooth to print directly, or turn off Direct print in Settings.",
+                        "Allow Nearby devices / Bluetooth (Connect + Scan), then print again.",
                         Toast.LENGTH_LONG
                     ).show()
-                    HtmlPrintHelper.printHtml(activity, html, job)
                     return@runOnUiThread
                 }
                 ThermalPrintHelper.printHtmlToThermal(activity, html, mac)
@@ -75,7 +77,7 @@ class PrintJsBridge(private val activity: AppCompatActivity) {
     @JavascriptInterface
     fun getBondedPrintersJson(): String {
         return try {
-            if (!BluetoothPermissionHelper.hasConnectPermission(activity)) {
+            if (!BluetoothPermissionHelper.hasBluetoothPrintPermission(activity)) {
                 return JSONObject().put("error", "bluetooth_permission").toString()
             }
             val adapter = (activity.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
@@ -104,7 +106,7 @@ class PrintJsBridge(private val activity: AppCompatActivity) {
     fun requestBluetoothConnectPermission() {
         activity.runOnUiThread {
             if (activity is MainActivity) {
-                activity.ensureBluetoothConnectPermission()
+                activity.ensureBluetoothPrintPermissions()
             }
         }
     }

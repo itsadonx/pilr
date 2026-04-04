@@ -17,26 +17,38 @@ import androidx.core.content.ContextCompat
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val REQ_BT_CONNECT = 10042
+        private const val REQ_BT_PRINT = 10042
     }
 
     private lateinit var webView: WebView
 
-    /** @return true if Bluetooth connect permission is already granted (or not required on this API). */
+    /**
+     * @return true if Bluetooth permissions for direct thermal print are already granted (or not required on this API).
+     * On API 31+ requests **BLUETOOTH_CONNECT** and **BLUETOOTH_SCAN** (needed for cancelDiscovery + RFCOMM).
+     */
     fun ensureBluetoothConnectPermission(): Boolean {
+        return ensureBluetoothPrintPermissions()
+    }
+
+    fun ensureBluetoothPrintPermissions(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return true
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
+        val need = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) !=
             PackageManager.PERMISSION_GRANTED
         ) {
+            need.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            need.add(Manifest.permission.BLUETOOTH_SCAN)
+        }
+        if (need.isEmpty()) {
             return true
         }
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
-            REQ_BT_CONNECT
-        )
+        ActivityCompat.requestPermissions(this, need.toTypedArray(), REQ_BT_PRINT)
         return false
     }
 
@@ -46,10 +58,18 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_BT_CONNECT && grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (requestCode != REQ_BT_PRINT || grantResults.isEmpty()) {
+            return
+        }
+        val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        if (allGranted) {
             Toast.makeText(this, "Bluetooth allowed. Tap Refresh printer list.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(
+                this,
+                "Allow Nearby devices / Bluetooth permissions for direct print.",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
