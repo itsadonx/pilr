@@ -144,8 +144,9 @@ object ThermalPrintHelper {
 
     private fun prepareLineForThermal(line: String): String {
         var s = line.replace('\u00A0', ' ').replace('\u202F', ' ')
-        s = s.replace('\u20B1', "Php").replace("₱", "Php")
-        s = s.replace("$", "Php")
+        // String.replace for peso (Char+String overload does not exist); avoid "$" in quotes (Kotlin template).
+        s = s.replace("\u20B1", "Php").replace("₱", "Php")
+        s = s.replace("\u0024", "Php")
         return s
     }
 
