@@ -89,7 +89,7 @@ object HtmlPrintHelper {
                             val adapter: PrintDocumentAdapter = webView.createPrintDocumentAdapter(docName)
                             val attrs = try {
                                 PrintAttributes.Builder()
-                                    .setMediaSize(MEDIA_A6_PORTRAIT, true)
+                                    .setMediaSize(MEDIA_A6_PORTRAIT)
                                     .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
                                     .build()
                             } catch (_: Exception) {
