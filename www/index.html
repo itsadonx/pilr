@@ -823,23 +823,48 @@
             background-color: #1e8449;
         }
 
-        /* Receipt Modal Styles */
+        /* Receipt Modal Styles — compact line-height/spacing for less thermal paper */
         .receipt-modal {
             max-width: 400px;
             width: 90%;
         }
 
+        /* Fit receipt dialog to the device: scroll content, keep header + actions visible */
+        #receiptModal .modal.receipt-modal {
+            max-width: min(400px, 96vw);
+            width: min(400px, 96vw);
+            max-height: calc(100vh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+            max-height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+        }
+
+        #receiptModal .modal-body {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        #receiptModal .receipt-container {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         .receipt-container {
-            padding: 20px;
+            padding: 10px 12px;
             background-color: white;
             /* Match reconciliation print font */
             font-family: "Courier New", Courier, monospace, Arial, sans-serif;
             max-width: 100%;
+            line-height: 1.2;
         }
 
         @media print {
             .receipt-container {
-                padding: 0;
+                padding: 2px 4px;
             }
             .modal-header, .modal-close, .receipt-actions {
                 display: none;
@@ -861,51 +886,56 @@
 
         .receipt-header {
             text-align: center;
-            margin-bottom: 15px;
+            margin-bottom: 6px;
+            line-height: 1.15;
         }
 
         .receipt-title {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: bold;
-            margin-bottom: 5px;
-            letter-spacing: 1px;
+            margin-bottom: 2px;
+            letter-spacing: 0.5px;
+            line-height: 1.1;
         }
 
         .receipt-address {
-            font-size: 12px;
-            margin-bottom: 10px;
-            line-height: 1.4;
+            font-size: 11px;
+            margin-bottom: 4px;
+            line-height: 1.15;
         }
 
         .receipt-subtitle {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
             text-align: center;
+            line-height: 1.15;
         }
 
         .receipt-copy-label {
-            font-size: 12px;
+            font-size: 11px;
             text-align: center;
-            margin-bottom: 10px;
+            margin-bottom: 4px;
             font-style: italic;
+            line-height: 1.15;
         }
 
         .receipt-divider {
             border-top: 1px dashed #000;
-            margin: 15px 0;
+            margin: 6px 0;
         }
 
         .receipt-details {
-            font-size: 13px;
-            line-height: 1.8;
-            margin-bottom: 10px;
+            font-size: 12px;
+            line-height: 1.2;
+            margin-bottom: 4px;
         }
 
         .receipt-detail-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
+            line-height: 1.15;
         }
 
         .receipt-detail-label {
@@ -918,41 +948,47 @@
         }
 
         .receipt-pricing {
-            margin: 15px 0;
+            margin: 6px 0;
         }
 
         .receipt-pricing-item {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 13px;
+            margin-bottom: 2px;
+            font-size: 12px;
+            line-height: 1.15;
         }
 
         .receipt-totals {
-            margin-top: 15px;
-            font-size: 14px;
+            margin-top: 6px;
+            font-size: 13px;
+            line-height: 1.15;
         }
 
         .receipt-total-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            margin-bottom: 3px;
             font-weight: bold;
+            line-height: 1.15;
         }
 
         .receipt-footer {
             text-align: center;
-            margin-top: 20px;
-            font-size: 13px;
+            margin-top: 6px;
+            font-size: 12px;
             font-style: italic;
+            line-height: 1.15;
         }
 
         .receipt-actions {
             display: flex;
             gap: 10px;
-            margin-top: 20px;
-            padding-top: 15px;
+            flex-shrink: 0;
+            margin-top: 0;
+            padding: 10px 12px 12px;
             border-top: 1px solid #e0e0e0;
+            background: #fff;
         }
 
         .btn-print {
@@ -2297,6 +2333,30 @@
         </div>
     </div>
 
+    <!-- Cloud shared settings (Firebase RTDB) — same pricing/users/types across devices -->
+    <div class="modal-overlay" id="sharedCloudSettingsModal" style="z-index: 4100;">
+        <div class="modal" style="max-width: 440px;">
+            <div class="modal-header">
+                <span>Cloud settings found</span>
+                <button type="button" class="modal-close" id="closeSharedCloudSettingsModal" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="sharedCloudSettingsMessage" style="margin: 0 0 10px 0; line-height: 1.5;">
+                    Another device saved settings to the cloud. Use those settings on this device?
+                </p>
+                <p id="sharedCloudSettingsMeta" style="color: #7f8c8d; font-size: 13px; margin: 0 0 16px 0;"></p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="add-btn" id="sharedCloudSettingsApplyBtn" style="flex: 1; min-width: 140px; background-color: #27ae60;">
+                        Use cloud settings
+                    </button>
+                    <button type="button" class="add-btn" id="sharedCloudSettingsKeepBtn" style="flex: 1; min-width: 140px; background-color: #95a5a6;">
+                        Keep this device
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Pricing Form Modal -->
     <div class="modal-overlay" id="pricingFormModal">
         <div class="modal" style="max-width: 400px;">
@@ -3177,6 +3237,11 @@
             loadDeviceNumberIntoSettings();
             // Reset to first tab when opening
             switchTab('pricing');
+            setTimeout(function() {
+                if (typeof maybePromptCloudSettingsWhenOpeningSettings === 'function') {
+                    maybePromptCloudSettingsWhenOpeningSettings();
+                }
+            }, 0);
         }
 
         function closeSettingsModal() {
@@ -3582,10 +3647,14 @@
             return div.innerHTML;
         }
 
+        // Replaced when shared Firebase settings module initializes (after `initializeFirebase`)
+        var schedulePushSharedSettingsToFirebase = function() {};
+
         // Save pricing data to localStorage
         function savePricingToLocalStorage() {
             try {
                 localStorage.setItem('pricingData', JSON.stringify(pricingData));
+                schedulePushSharedSettingsToFirebase();
             } catch (e) {
                 console.error('Error saving to localStorage:', e);
                 alert('Error saving data. Please try again.');
@@ -3743,6 +3812,7 @@
         function saveUsersToLocalStorage() {
             try {
                 localStorage.setItem('userData', JSON.stringify(userData));
+                schedulePushSharedSettingsToFirebase();
             } catch (e) {
                 console.error('Error saving to localStorage:', e);
                 alert('Error saving data. Please try again.');
@@ -4644,6 +4714,7 @@
         function saveEntryTypeToLocalStorage() {
             try {
                 localStorage.setItem('entryTypeData', JSON.stringify(entryTypeData));
+                schedulePushSharedSettingsToFirebase();
             } catch (e) {
                 console.error('Error saving to localStorage:', e);
                 alert('Error saving data. Please try again.');
@@ -4704,6 +4775,7 @@
         function saveVisitTypeToLocalStorage() {
             try {
                 localStorage.setItem('visitTypeData', JSON.stringify(visitTypeData));
+                schedulePushSharedSettingsToFirebase();
             } catch (e) {
                 console.error('Error saving visit type data:', e);
                 alert('Error saving data. Please try again.');
@@ -4836,6 +4908,8 @@
         // Initialize Visit Types
         loadVisitTypeFromLocalStorage();
         renderVisitTypeTable();
+
+        loadBarcodeSettingsFromLocalStorage();
 
         // Main Form Functionality
         let pricingQuantities = {}; // Store quantities for each pricing entry
@@ -5472,6 +5546,7 @@
         function saveAddressesToLocalStorage() {
             try {
                 localStorage.setItem('addressData', JSON.stringify(addressData));
+                schedulePushSharedSettingsToFirebase();
             } catch (e) {
                 console.error('Error saving addresses:', e);
             }
@@ -5997,22 +6072,22 @@
                 '  body { margin: 0; padding: 0; }' +
                 '}' +
                 '* { margin: 0; padding: 0; box-sizing: border-box; }' +
-                'body { font-family: "Courier New", Courier, monospace, Arial, sans-serif; padding: 20px; background-color: white; }' +
-                '.receipt-header { text-align: center; margin-bottom: 15px; }' +
-                '.receipt-title { font-size: 22px; font-weight: bold; margin-bottom: 5px; letter-spacing: 1px; }' +
-                '.receipt-address { font-size: 12px; margin-bottom: 10px; line-height: 1.4; }' +
-                '.receipt-subtitle { font-size: 16px; font-weight: bold; margin-bottom: 5px; text-align: center; }' +
-                '.receipt-copy-label { font-size: 12px; text-align: center; margin-bottom: 10px; font-style: italic; }' +
-                '.receipt-divider { border-top: 1px dashed #000; margin: 15px 0; }' +
-                '.receipt-details { font-size: 13px; line-height: 1.8; margin-bottom: 10px; }' +
-                '.receipt-detail-row { display: flex; justify-content: space-between; margin-bottom: 5px; }' +
+                'body { font-family: "Courier New", Courier, monospace, Arial, sans-serif; padding: 4px 6px; background-color: white; line-height: 1.15; }' +
+                '.receipt-header { text-align: center; margin-bottom: 6px; line-height: 1.15; }' +
+                '.receipt-title { font-size: 20px; font-weight: bold; margin-bottom: 2px; letter-spacing: 0.5px; line-height: 1.1; }' +
+                '.receipt-address { font-size: 11px; margin-bottom: 4px; line-height: 1.15; }' +
+                '.receipt-subtitle { font-size: 15px; font-weight: bold; margin-bottom: 2px; text-align: center; line-height: 1.15; }' +
+                '.receipt-copy-label { font-size: 11px; text-align: center; margin-bottom: 4px; font-style: italic; line-height: 1.15; }' +
+                '.receipt-divider { border-top: 1px dashed #000; margin: 6px 0; }' +
+                '.receipt-details { font-size: 12px; line-height: 1.2; margin-bottom: 4px; }' +
+                '.receipt-detail-row { display: flex; justify-content: space-between; margin-bottom: 2px; line-height: 1.15; }' +
                 '.receipt-detail-label { font-weight: bold; }' +
                 '.receipt-detail-value { flex: 1; text-align: right; }' +
-                '.receipt-pricing { margin: 15px 0; }' +
-                '.receipt-pricing-item { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }' +
-                '.receipt-totals { margin-top: 15px; font-size: 14px; }' +
-                '.receipt-total-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: bold; }' +
-                '.receipt-footer { text-align: center; margin-top: 20px; font-size: 13px; font-style: italic; }' +
+                '.receipt-pricing { margin: 6px 0; }' +
+                '.receipt-pricing-item { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 12px; line-height: 1.15; }' +
+                '.receipt-totals { margin-top: 6px; font-size: 13px; line-height: 1.15; }' +
+                '.receipt-total-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-weight: bold; line-height: 1.15; }' +
+                '.receipt-footer { text-align: center; margin-top: 6px; font-size: 12px; font-style: italic; line-height: 1.15; }' +
                 '</style>' +
                 '</head>' +
                 '<body>' +
@@ -6270,6 +6345,269 @@
                 return false;
             }
         }
+
+        // --- Shared app settings (Realtime DB: appSettings/shared). Rules must allow read/write here. ---
+        const SHARED_APP_SETTINGS_FIREBASE_PATH = 'appSettings/shared';
+        const BARCODE_SETTINGS_LS_KEY = 'barcodeSettings';
+        let _applyingCloudSettings = false;
+        let _pushSharedSettingsTimer = null;
+        let pendingRemoteSharedSettings = null;
+
+        function normalizeVisitTypesFromRemote(arr) {
+            if (!Array.isArray(arr)) return [];
+            return arr
+                .map(function(item) {
+                    if (typeof item === 'string') return { name: item };
+                    return item;
+                })
+                .filter(function(item) { return item && item.name; });
+        }
+
+        function stripRemoteToPayload(remote) {
+            if (!remote || typeof remote !== 'object') return null;
+            var bc = null;
+            if (remote.barcodeSettings && typeof remote.barcodeSettings === 'object') {
+                bc = remote.barcodeSettings;
+            }
+            return {
+                pricingData: Array.isArray(remote.pricingData) ? remote.pricingData : [],
+                userData: Array.isArray(remote.userData) ? remote.userData : [],
+                entryTypeData: Array.isArray(remote.entryTypeData) ? remote.entryTypeData : [],
+                visitTypeData: normalizeVisitTypesFromRemote(remote.visitTypeData),
+                addressData: Array.isArray(remote.addressData) ? remote.addressData : [],
+                barcodeSettings: bc
+            };
+        }
+
+        function collectSharedSettingsPayload() {
+            var bc = null;
+            try {
+                var raw = localStorage.getItem(BARCODE_SETTINGS_LS_KEY);
+                if (raw) bc = JSON.parse(raw);
+            } catch (e) {
+                bc = null;
+            }
+            return stripRemoteToPayload({
+                pricingData: pricingData,
+                userData: userData,
+                entryTypeData: entryTypeData,
+                visitTypeData: visitTypeData,
+                addressData: addressData,
+                barcodeSettings: bc
+            });
+        }
+
+        function sharedSettingsFingerprint(obj) {
+            try {
+                return JSON.stringify(obj);
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function getBarcodeSettingsFromForm() {
+            var typeEl = document.getElementById('barcode-type');
+            var w = document.getElementById('barcode-width');
+            var h = document.getElementById('barcode-height');
+            var disp = document.getElementById('barcode-display-value');
+            var fs = document.getElementById('barcode-font-size');
+            return {
+                type: typeEl ? String(typeEl.value || 'code128') : 'code128',
+                width: w && w.value !== '' && !isNaN(Number(w.value)) ? Number(w.value) : 2,
+                height: h && h.value !== '' && !isNaN(Number(h.value)) ? Number(h.value) : 100,
+                displayValue: disp ? !!disp.checked : true,
+                fontSize: fs && fs.value !== '' && !isNaN(Number(fs.value)) ? Number(fs.value) : 20
+            };
+        }
+
+        function applyBarcodeSettingsToForm(obj) {
+            if (!obj || typeof obj !== 'object') return;
+            var typeEl = document.getElementById('barcode-type');
+            var w = document.getElementById('barcode-width');
+            var h = document.getElementById('barcode-height');
+            var disp = document.getElementById('barcode-display-value');
+            var fs = document.getElementById('barcode-font-size');
+            if (typeEl && obj.type) typeEl.value = String(obj.type);
+            if (w && obj.width !== undefined && obj.width !== '') w.value = String(obj.width);
+            if (h && obj.height !== undefined && obj.height !== '') h.value = String(obj.height);
+            if (disp && obj.displayValue !== undefined) disp.checked = !!obj.displayValue;
+            if (fs && obj.fontSize !== undefined && obj.fontSize !== '') fs.value = String(obj.fontSize);
+        }
+
+        function loadBarcodeSettingsFromLocalStorage() {
+            try {
+                var raw = localStorage.getItem(BARCODE_SETTINGS_LS_KEY);
+                if (!raw) return;
+                var o = JSON.parse(raw);
+                applyBarcodeSettingsToForm(o);
+            } catch (e) {
+                console.warn('loadBarcodeSettingsFromLocalStorage:', e);
+            }
+        }
+
+        function saveBarcodeSettingsToLocalStorage() {
+            try {
+                var o = getBarcodeSettingsFromForm();
+                localStorage.setItem(BARCODE_SETTINGS_LS_KEY, JSON.stringify(o));
+            } catch (e) {
+                console.error('saveBarcodeSettingsToLocalStorage:', e);
+                alert('Error saving barcode settings.');
+            }
+        }
+
+        function pushSharedSettingsToFirebaseNow() {
+            if (_applyingCloudSettings) return;
+            if (!initializeFirebase() || !db) return;
+            var payload = collectSharedSettingsPayload();
+            var data = Object.assign({}, payload, {
+                updatedAt: firebase.database.ServerValue.TIMESTAMP,
+                updatedAtClient: Date.now()
+            });
+            db.ref(SHARED_APP_SETTINGS_FIREBASE_PATH).set(data).catch(function(e) {
+                console.warn('Firebase shared settings push failed:', e);
+            });
+        }
+
+        schedulePushSharedSettingsToFirebase = function() {
+            if (_applyingCloudSettings) return;
+            if (_pushSharedSettingsTimer) clearTimeout(_pushSharedSettingsTimer);
+            _pushSharedSettingsTimer = setTimeout(function() {
+                _pushSharedSettingsTimer = null;
+                pushSharedSettingsToFirebaseNow();
+            }, 800);
+        };
+
+        function applySharedSettingsFromRemote(remoteRaw) {
+            var remote = stripRemoteToPayload(remoteRaw);
+            if (!remote) return;
+            _applyingCloudSettings = true;
+            try {
+                pricingData = remote.pricingData;
+                localStorage.setItem('pricingData', JSON.stringify(pricingData));
+                if (typeof renderPricingTable === 'function') renderPricingTable();
+                if (typeof loadPricingEntries === 'function') loadPricingEntries();
+                if (typeof calculateTotalPrice === 'function') calculateTotalPrice();
+
+                userData = remote.userData;
+                localStorage.setItem('userData', JSON.stringify(userData));
+                if (typeof renderUserTable === 'function') renderUserTable();
+
+                entryTypeData = remote.entryTypeData;
+                localStorage.setItem('entryTypeData', JSON.stringify(entryTypeData));
+                if (typeof renderEntryTypeTable === 'function') renderEntryTypeTable();
+                if (typeof loadEntryTypesDropdown === 'function') loadEntryTypesDropdown();
+
+                visitTypeData = normalizeVisitTypesFromRemote(remoteRaw && remoteRaw.visitTypeData);
+                localStorage.setItem('visitTypeData', JSON.stringify(visitTypeData));
+                if (typeof renderVisitTypeTable === 'function') renderVisitTypeTable();
+
+                addressData = remote.addressData;
+                localStorage.setItem('addressData', JSON.stringify(addressData));
+                if (typeof renderAddressList === 'function') {
+                    var addrInput = document.getElementById('addressModalInput');
+                    renderAddressList(addrInput && addrInput.value ? addrInput.value : '');
+                }
+
+                if (remote.barcodeSettings) {
+                    localStorage.setItem(BARCODE_SETTINGS_LS_KEY, JSON.stringify(remote.barcodeSettings));
+                    applyBarcodeSettingsToForm(remote.barcodeSettings);
+                } else {
+                    localStorage.removeItem(BARCODE_SETTINGS_LS_KEY);
+                }
+
+                if (typeof initSegmentedControls === 'function') initSegmentedControls();
+            } catch (e) {
+                console.error('applySharedSettingsFromRemote:', e);
+            } finally {
+                _applyingCloudSettings = false;
+            }
+        }
+
+        function closeSharedCloudSettingsModal() {
+            var el = document.getElementById('sharedCloudSettingsModal');
+            if (el) el.classList.remove('active');
+            pendingRemoteSharedSettings = null;
+        }
+
+        function maybePromptCloudSettingsWhenOpeningSettings() {
+            if (!initializeFirebase() || !db) return;
+            db.ref(SHARED_APP_SETTINGS_FIREBASE_PATH).once('value').then(function(snap) {
+                var raw = snap.val();
+                if (!raw) return;
+
+                var remotePayload = stripRemoteToPayload(raw);
+                if (!remotePayload) return;
+
+                var localPayload = collectSharedSettingsPayload();
+                var remoteTs = Number(raw.updatedAt) || Number(raw.updatedAtClient) || 0;
+                var ignoredTs = parseInt(localStorage.getItem('entrancePassIgnoredRemoteSettingsAt') || '0', 10);
+
+                if (remoteTs > 0 && ignoredTs >= remoteTs) {
+                    return;
+                }
+
+                if (sharedSettingsFingerprint(localPayload) === sharedSettingsFingerprint(remotePayload)) {
+                    return;
+                }
+
+                pendingRemoteSharedSettings = raw;
+                var meta = document.getElementById('sharedCloudSettingsMeta');
+                if (meta) {
+                    meta.textContent = remoteTs
+                        ? ('Last saved: ' + new Date(remoteTs).toLocaleString())
+                        : '';
+                }
+                var modal = document.getElementById('sharedCloudSettingsModal');
+                if (modal) modal.classList.add('active');
+            }).catch(function(e) {
+                console.warn('Cloud settings check failed:', e);
+            });
+        }
+
+        (function bindSharedCloudSettingsUi() {
+            var modal = document.getElementById('sharedCloudSettingsModal');
+            var closeBtn = document.getElementById('closeSharedCloudSettingsModal');
+            var applyBtn = document.getElementById('sharedCloudSettingsApplyBtn');
+            var keepBtn = document.getElementById('sharedCloudSettingsKeepBtn');
+
+            function dismissKeep() {
+                var raw = pendingRemoteSharedSettings;
+                var ts = raw ? (Number(raw.updatedAt) || Number(raw.updatedAtClient) || 0) : 0;
+                if (ts > 0) {
+                    localStorage.setItem('entrancePassIgnoredRemoteSettingsAt', String(ts));
+                }
+                closeSharedCloudSettingsModal();
+            }
+
+            if (closeBtn) closeBtn.addEventListener('click', dismissKeep);
+            if (keepBtn) keepBtn.addEventListener('click', dismissKeep);
+            if (applyBtn) {
+                applyBtn.addEventListener('click', function() {
+                    if (!pendingRemoteSharedSettings) {
+                        closeSharedCloudSettingsModal();
+                        return;
+                    }
+                    applySharedSettingsFromRemote(pendingRemoteSharedSettings);
+                    localStorage.removeItem('entrancePassIgnoredRemoteSettingsAt');
+                    closeSharedCloudSettingsModal();
+                    alert('Cloud settings applied on this device.');
+                });
+            }
+            if (modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) dismissKeep();
+                });
+            }
+
+            var barcodeSave = document.getElementById('saveBarcodeSettingsBtn');
+            if (barcodeSave) {
+                barcodeSave.addEventListener('click', function() {
+                    saveBarcodeSettingsToLocalStorage();
+                    schedulePushSharedSettingsToFirebase();
+                    alert('Barcode settings saved.');
+                });
+            }
+        })();
 
         // Check Firebase for approved cancellations and update local status
         function checkApprovedCancellations() {
