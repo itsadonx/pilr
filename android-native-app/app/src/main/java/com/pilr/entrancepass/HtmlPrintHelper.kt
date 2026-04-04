@@ -18,6 +18,10 @@ import android.webkit.WebViewClient
  */
 object HtmlPrintHelper {
 
+    /** ISO A6 portrait (105×148 mm) in mils — use explicit ctor; [MediaSize.ISO_A6] is not on all SDK stubs. */
+    private val MEDIA_A6_PORTRAIT: PrintAttributes.MediaSize =
+        PrintAttributes.MediaSize("ISO_A6", "ISO A6", 4134, 5827)
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingWebView: WebView? = null
     private var pendingParent: ViewGroup? = null
@@ -85,7 +89,7 @@ object HtmlPrintHelper {
                             val adapter: PrintDocumentAdapter = webView.createPrintDocumentAdapter(docName)
                             val attrs = try {
                                 PrintAttributes.Builder()
-                                    .setMediaSize(PrintAttributes.MediaSize.ISO_A6, true)
+                                    .setMediaSize(MEDIA_A6_PORTRAIT, true)
                                     .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
                                     .build()
                             } catch (_: Exception) {
